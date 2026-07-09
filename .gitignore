@@ -14,3 +14,4 @@ htmlcov/
 !.env.example
 logs/
 .ruff_cache/
+*.egg-info/
