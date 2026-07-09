@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package confuse.processor.v1;
+
+// Unified Processor Service
+// Handles document and code processing with intelligent chunking
+// Delegates embedding generation to embeddings-service
+service UnifiedProcessor {
+  // Process single file (chunk -> embed -> store pipeline)
+  rpc ProcessFile(ProcessFileRequest) returns (ProcessFileResponse);
+  
+  // Process batch of files
+  rpc ProcessBatch(ProcessBatchRequest) returns (ProcessBatchResponse);
+  
+  // Stream files for large repositories
+  rpc StreamFiles(stream FileChunk) returns (stream ProcessingResult);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  
+  // Get processing status
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+}
+
+// Request to process a single file
+message ProcessFileRequest {
+  string source_id = 1;
+  string file_id = 2;
+  string filename = 3;
+  bytes content = 4;
+  string file_type = 5;  // "code" or "document"
+  string language = 6;   // For code files (e.g., "python", "rust")
+  map<string, string> metadata = 7;
+}
+
+// A processed chunk of content
+message Chunk {
+  string chunk_id = 1;
+  string content = 2;
+  int32 start_line = 3;
+  int32 end_line = 4;
+  string chunk_type = 5;   // "function", "class", "paragraph", "section", etc.
+  float quality_score = 6;
+  map<string, string> metadata = 7;
+}
+
+// Response from processing a file
+message ProcessFileResponse {
+  string file_id = 1;
+  string status = 2;  // "success", "failed", "partial"
+  int32 chunks_created = 3;
+  repeated string chunk_ids = 4;
+  string error_message = 5;
+  map<string, string> metadata = 6;
+  ProcessingStats stats = 7;
+  repeated Chunk chunks = 8;
+  string processing_stage = 9;  // "chunked", "embedded", "stored"
+}
+
+// Processing statistics
+message ProcessingStats {
+  int64 processing_time_ms = 1;
+  int32 file_size_bytes = 2;
+  int32 line_count = 3;
+  string chunking_strategy = 4;
+  float avg_chunk_quality = 5;
+}
+
+// Request to process multiple files
+message ProcessBatchRequest {
+  repeated ProcessFileRequest files = 1;
+  int32 max_concurrent = 2;  // Maximum concurrent processing
+}
+
+// Response from batch processing
+message ProcessBatchResponse {
+  int32 total_processed = 1;
+  int32 total_failed = 2;
+  repeated ProcessFileResponse results = 3;
+  int64 total_time_ms = 4;
+}
+
+// File chunk for streaming
+message FileChunk {
+  string source_id = 1;
+  string file_id = 2;
+  string filename = 3;
+  bytes chunk_data = 4;
+  int32 chunk_index = 5;
+  int32 total_chunks = 6;
+  bool is_last = 7;
+  map<string, string> metadata = 8;
+}
+
+// Processing result for streaming
+message ProcessingResult {
+  string file_id = 1;
+  string status = 2;
+  int32 chunks_created = 3;
+  repeated string chunk_ids = 4;
+  string error_message = 5;
+  float progress_percentage = 6;
+}
+
+// Health check request
+message HealthCheckRequest {}
+
+// Health check response
+message HealthCheckResponse {
+  string status = 1;
+  string version = 2;
+  map<string, string> capabilities = 3;
+  ServiceHealth health = 4;
+}
+
+// Service health details
+message ServiceHealth {
+  bool postgres_connected = 1;
+  bool embeddings_service_connected = 2;
+  bool relation_graph_connected = 3;
+  bool blob_storage_available = 4;
+  int32 active_processing_jobs = 5;
+}
+
+// Status request
+message StatusRequest {
+  string job_id = 1;
+}
+
+// Status response
+message StatusResponse {
+  string job_id = 1;
+  string status = 2;
+  int32 files_processed = 3;
+  int32 files_total = 4;
+  int32 chunks_created = 5;
+  float progress_percentage = 6;
+  repeated string errors = 7;
+  int64 started_at = 8;
+  int64 completed_at = 9;
+}

@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package confuse.connector.v1;
+
+// DataConnector service - handles all data source integrations
+service DataConnector {
+  // Source Management
+  rpc ListSources(ListSourcesRequest) returns (ListSourcesResponse);
+  rpc CreateSource(CreateSourceRequest) returns (Source);
+  rpc GetSource(GetSourceRequest) returns (Source);
+  rpc UpdateSource(UpdateSourceRequest) returns (Source);
+  rpc DeleteSource(DeleteSourceRequest) returns (DeleteResponse);
+  
+  // Ingestion Operations
+  rpc IngestSource(IngestRequest) returns (IngestResponse);
+  rpc GetJobStatus(JobStatusRequest) returns (JobStatus);
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  
+  // Sync Operations
+  rpc SyncSource(SyncRequest) returns (SyncResponse);
+  rpc GetSyncStatus(SyncStatusRequest) returns (SyncStatus);
+  
+  // Webhooks
+  rpc ForwardWebhook(ForwardWebhookRequest) returns (ForwardWebhookResponse);
+}
+
+// Messages
+message Source {
+  string id = 1;
+  string user_id = 2;
+  string type = 3;  // github, gitlab, notion, etc.
+  string name = 4;
+  string uri = 5;
+  map<string, string> config = 6;
+  int64 created_at = 7;
+  int64 updated_at = 8;
+}
+
+message ListSourcesRequest {
+  string user_id = 1;
+  optional string type = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message ListSourcesResponse {
+  repeated Source sources = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message CreateSourceRequest {
+  string user_id = 1;
+  string type = 2;
+  string name = 3;
+  string uri = 4;
+  map<string, string> config = 5;
+}
+
+message GetSourceRequest {
+  string source_id = 1;
+}
+
+message UpdateSourceRequest {
+  string source_id = 1;
+  optional string name = 2;
+  optional string uri = 3;
+  map<string, string> config = 4;
+}
+
+message DeleteSourceRequest {
+  string source_id = 1;
+}
+
+message DeleteResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message IngestRequest {
+  string source_id = 1;
+  string user_id = 2;
+  optional string path = 3;
+}
+
+message IngestResponse {
+  string job_id = 1;
+  string status = 2;
+  string message = 3;
+}
+
+message JobStatusRequest {
+  string job_id = 1;
+}
+
+message JobStatus {
+  string job_id = 1;
+  string source_id = 2;
+  string status = 3;  // pending, running, completed, failed
+  int32 files_processed = 4;
+  int64 total_size_bytes = 5;
+  optional string error = 6;
+  int64 created_at = 7;
+  int64 updated_at = 8;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+}
+
+message CancelJobResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message SyncRequest {
+  string source_id = 1;
+}
+
+message SyncResponse {
+  string sync_id = 1;
+  string status = 2;
+}
+
+message SyncStatusRequest {
+  string sync_id = 1;
+}
+
+message SyncStatus {
+  string sync_id = 1;
+  string status = 2;
+  int32 files_synced = 3;
+  int64 last_sync_at = 4;
+}
+
+message ForwardWebhookRequest {
+  string provider = 1;
+  string payload = 2;
+  map<string, string> headers = 3;
+}
+
+message ForwardWebhookResponse {
+  bool success = 1;
+  string response = 2;
+  optional string error = 3;
+}

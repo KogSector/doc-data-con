@@ -1,0 +1,16 @@
+# Python Service .dockerignore
+# Ignore cache and temp files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+.env.*
+node_modules/
+.git/
+.gitignore
+README.md
+Dockerfile*
+.dockerignore
