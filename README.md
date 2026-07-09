@@ -109,7 +109,7 @@ The service requires Python 3.8+ with the following key dependencies:
 - GitPython: Git repository operations
 - aiofiles: Async file I/O
 
-### Running Locally
+### How to run the microservicening Locally
 ```bash
 # Install dependencies
 pip install -e .
