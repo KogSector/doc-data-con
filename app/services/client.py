@@ -203,7 +203,7 @@ class ServiceClient:
         # 1. Delete from Postgres
         try:
             logger.info("Deleting postgres data for source", source_id=group_id)
-            async for session in get_session():
+            async with get_session() as session:
                 await session.execute(text("DELETE FROM file_metadata WHERE source_id = :source_id"), {"source_id": group_id})
                 await session.execute(text("DELETE FROM processing_jobs WHERE source_id = :source_id"), {"source_id": group_id})
                 await session.execute(text("DELETE FROM chunk_snapshot WHERE source_id = :source_id"), {"source_id": group_id})

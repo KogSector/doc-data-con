@@ -60,31 +60,14 @@ async def lifespan(app: FastAPI):
         raise  # Fail fast if credential storage cannot be initialized
 
         # Removed dead TokenRefreshService code
-    # Initialize Kafka producer (required for service to function)
-    from app.infra.events import init_event_producer
 
-    try:
-        init_event_producer()
-        logger.info("Kafka on Aiven is initialized")
-    except RuntimeError as e:
-        logger.error("Kafka initialization failed", error=str(e))
-        logger.error("Kafka is required - service cannot start without it")
-        sys.exit(1)
-    except Exception as e:
-        logger.warning("Kafka producer failed to initialize", error=str(e))
 
     logger.info("Application startup complete")
     yield
 
 
 
-    # Shutdown Kafka producer
-    try:
-        from app.infra.events import close_event_producer
 
-        close_event_producer()
-    except Exception:
-        pass
 
 
 
