@@ -756,7 +756,6 @@ async def process_repo_update_webhook(
     """Process repository update webhook by emitting REPO_UPDATED event."""
     from app.infra.db.postgres import get_session, Repository
     from sqlalchemy import select
-    from app.infra.events.repository_events import get_repo_event_publisher
     from app.security.credentials import get_credential_storage
     from app.security.credentials import get_jwt_generator
     import uuid as uuid_lib
@@ -817,34 +816,14 @@ async def process_repo_update_webhook(
                 provider=provider, repo_id=repo_id, user_id=user_id
             )
 
-            publisher = get_repo_event_publisher()
-            if not publisher:
-                logger.error("Repo event publisher not available", repo_id=repo_id)
-                return
-
             correlation_id = str(uuid_lib.uuid4())
-
-            success = publisher.publish_repo_updated(
+            repo.updated_at = datetime.now(timezone.utc)
+            logger.info(
+                "Processed webhook (Kafka removed)",
                 repo_id=repo_id,
-                url=repo_url,
-                branch=branch,
-                provider=provider,
-                old_commit=old_commit,
-                new_commit=new_commit,
-                credential_ref=credential_ref,
-                update_type="push",
-                correlation_id=correlation_id,
+                old_commit=old_commit[:8],
+                new_commit=new_commit[:8],
             )
-
-            if success:
-                logger.info(
-                    "Published REPO_UPDATED event for webhook",
-                    repo_id=repo_id,
-                    old_commit=old_commit[:8],
-                    new_commit=new_commit[:8],
-                )
-            else:
-                logger.error("Failed to publish REPO_UPDATED event", repo_id=repo_id)
 
     except Exception as e:
         logger.error(

@@ -7,7 +7,7 @@ from app.connectors.gitlab_client import GitLabConnector
 from app.connectors.bitbucket_client import BitbucketConnector
 from app.services.client import get_service_client
 from app.infra.db.postgres import get_session, Repository
-from app.infra.events import get_event_producer
+
 
 logger = structlog.get_logger()
 
@@ -293,11 +293,7 @@ class RepoStreamer:
             else:
                 raise ValueError(f"Unsupported provider: {provider}")
 
-            # Flush any pending Kafka messages
-            producer = get_event_producer()
-            if producer:
-                logger.info("[REPO-STREAMER] Flushing Kafka event producer")
-                producer.flush()
+            # No Kafka producer to flush
 
             # Update repository status to active
             async with get_session() as session:
@@ -342,48 +338,20 @@ class RepoStreamer:
         user_id: str = "system",
         is_deleted: bool = False,
     ):
-        """Send the file content to unified-processor via Kafka topic repo.events."""
         try:
-            producer = get_event_producer()
-            if not producer:
-                # Fallback to HTTP if Kafka producer isn't initialized or in some tests
-                logger.warning("[REPO-STREAMER] Kafka producer not available, falling back to HTTP")
-                payload = {
-                    "content": content,
-                    "filename": file_path,
-                    "source_id": repo_id,
-                    "user_id": user_id,
-                    "is_base64": False
-                }
-                await self.client.send_to_processor_http(
-                    endpoint="/api/v1/process", payload=payload, timeout=60.0
-                )
-                return
-
-            from app.infra.events.events import StreamedFileEvent
-
-            parsed_repo_name = repo_url.split("github.com/")[-1].replace(".git", "") if "github.com/" in repo_url else "unknown/repo"
-
-            event = StreamedFileEvent(
-                repo_id=repo_id,
-                repo_name=parsed_repo_name,
-                file_path=file_path,
-                content=content,
-                url=repo_url,
-                user_id=user_id,
-                is_deleted=is_deleted,
-            )
-
-            producer.publish_to_topic(event=event, topic=StreamedFileEvent.topic(), key=repo_id)
-            logger.debug(
-                "[REPO-STREAMER] Published file to Kafka",
-                topic=StreamedFileEvent.topic(),
-                repo_id=repo_id,
-                file_path=file_path,
+            payload = {
+                "content": content,
+                "filename": file_path,
+                "source_id": repo_id,
+                "user_id": user_id,
+                "is_base64": False
+            }
+            await self.client.send_to_processor_http(
+                endpoint="/api/v1/process", payload=payload, timeout=60.0
             )
         except Exception as e:
             logger.error(
-                "Error sending file to unified-processor via Kafka",
+                "Error sending file to unified-processor via HTTP",
                 file_path=file_path,
                 error=str(e),
             )

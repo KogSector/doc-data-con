@@ -141,20 +141,9 @@ async def sync_git_repo_api(
                 provider=provider, repo_id=source_id, user_id=user_id_str
             )
 
-            from app.infra.events.repository_events import get_repo_event_publisher
-
-            publisher = get_repo_event_publisher()
+            publisher = None
             if publisher:
-                success = publisher.publish_repo_updated(
-                    repo_id=source_id,
-                    url=uri,
-                    branch=branch,
-                    provider=provider,
-                    old_commit=last_commit_hash,
-                    new_commit=latest_commit,
-                    credential_ref=credential_ref,
-                    update_type="manual_sync",
-                )
+                success = False
                 if success:
                     # Update metadata with new commit hash
                     try:

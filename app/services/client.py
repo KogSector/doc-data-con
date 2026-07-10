@@ -9,8 +9,18 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.config import get_settings
-from app.infra.events import EventProducer, SourceType
 from app.security.middleware_auth import _default_auth
+from enum import Enum
+
+class SourceType(str, Enum):
+    GITHUB = "github"
+    GITLAB = "gitlab"
+    BITBUCKET = "bitbucket"
+    URL = "url"
+    GOOGLE_DRIVE = "google_drive"
+    FILE_UPLOAD = "file_upload"
+    WEB = "web"
+    UNKNOWN = "unknown"
 
 logger = structlog.get_logger()
 
@@ -51,13 +61,7 @@ class ServiceClient:
                 }
                 stype = mapping.get(source_type.lower(), SourceType.UNKNOWN)
 
-            from app.infra.events import get_event_producer
-
-            producer = get_event_producer()
-
-            if not producer:
-                logger.error("Kafka producer not initialized, falling back to from_env()")
-                producer = EventProducer.from_env()
+            producer = None
 
             if stype == SourceType.URL:
                 logger.info("Triggering direct URL scrape", url=source_url, source_id=source_id)
