@@ -281,14 +281,7 @@ async def create_source(
                 await session.refresh(existing_source)
 
                 if existing_source.type in ["github", "gitlab", "bitbucket"]:
-                    from app.services.repositories.ingester import trigger_repo_sync
-
-                    background_tasks.add_task(
-                        trigger_repo_sync,
-                        str(existing_source.id),
-                        existing_source.type,
-                        existing_source.source_metadata,
-                    )
+                    raise HTTPException(status_code=400, detail="Repository sources must be created via repo-data-con")
                 else:
                     from app.services.documents.ingester import trigger_initial_sync
 
@@ -363,11 +356,7 @@ async def create_source(
         await session.refresh(source)
 
         if source.type in ["github", "gitlab", "bitbucket"]:
-            from app.services.repositories.ingester import trigger_repo_sync
-
-            background_tasks.add_task(
-                trigger_repo_sync, str(source.id), source.type, source.source_metadata
-            )
+            raise HTTPException(status_code=400, detail="Repository sources must be created via repo-data-con")
         else:
             from app.services.documents.ingester import trigger_initial_sync
 
@@ -1160,54 +1149,9 @@ async def process_source_background(job_id: str, source_id: str, source_obj):
         )
 
         if source_type in ["github", "gitlab", "bitbucket"]:
-            from app.security.credentials import get_credential_storage
-            from app.security.credentials import get_jwt_generator
-            from app.infra.events.repository_events import get_repo_event_publisher
-
-            credential_storage = get_credential_storage()
-            jwt_generator = get_jwt_generator()
-
-            if access_token:
-                stored = await credential_storage.store_credential(
-                    repo_id=source_id,
-                    provider=source_type,
-                    user_id=user_id,
-                    access_token=access_token,
-                )
-                if not stored:
-                    logger.error("Failed to store credentials for sync", repo_id=source_id)
-                    await job_manager.update_job_status(job_id, JobStatus.FAILED)
-                    return
-
-            credential_ref = jwt_generator.generate_credential_ref(
-                provider=source_type, repo_id=source_id, user_id=user_id
-            )
-
-            publisher = get_repo_event_publisher()
-            if not publisher:
-                logger.error("Repo event publisher not available", repo_id=source_id)
-                await job_manager.update_job_status(job_id, JobStatus.FAILED)
-                return
-
-            success = publisher.publish_repo_ingest_requested(
-                repo_id=source_id,
-                url=uri,
-                branch=branch,
-                provider=source_type,
-                commit_id="HEAD",
-                credential_ref=credential_ref,
-                user_id=user_id,
-                correlation_id=job_id,
-            )
-
-            if success:
-                logger.info("Published REPO_INGEST_REQUESTED event", repo_id=source_id)
-                # The unified-processor or the consumer will mark it as COMPLETED
-                # But for now, we'll mark it as COMPLETED to indicate we successfully dispatched it
-                await job_manager.update_job_status(job_id, JobStatus.COMPLETED)
-            else:
-                logger.error("Failed to publish REPO_INGEST_REQUESTED event", repo_id=source_id)
-                await job_manager.update_job_status(job_id, JobStatus.FAILED)
+            logger.error("Repository ingestion is not supported in doc-data-con", repo_id=source_id)
+            await job_manager.update_job_status(job_id, JobStatus.FAILED)
+            return
 
     except Exception as e:
         logger.error("Failed to process source", job_id=job_id, error=str(e))
