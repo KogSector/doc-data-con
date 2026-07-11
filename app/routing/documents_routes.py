@@ -26,7 +26,7 @@ from app.config import get_settings
 from app.services.documents.ingester import trigger_initial_sync
 
 logger = structlog.get_logger()
-router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 # In-memory store for demo data
 _documents = []
