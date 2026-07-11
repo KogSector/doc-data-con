@@ -5,6 +5,8 @@ Data Connector Service - Configuration
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 from pydantic import Field, validator
+import tempfile
+import os
 
 
 class Settings(BaseSettings):
@@ -105,7 +107,7 @@ class Settings(BaseSettings):
         return v
 
     # Downloads folder configuration
-    downloads_folder: str = Field(alias="DOWNLOADS_BASE_PATH")
+    downloads_folder: str = Field(default_factory=lambda: os.path.join(tempfile.gettempdir(), "confuse-downloads"), alias="DOWNLOADS_BASE_PATH")
 
 
 
