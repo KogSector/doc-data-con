@@ -210,9 +210,9 @@ async def delete_document(doc_id: str):
             # Use delete statement for efficiency and get the deleted user_id
             stmt = delete(Source).where(Source.id == val_uuid).returning(Source.user_id)
             result = await session.execute(stmt)
-            await session.commit()
             
             row = result.fetchone()
+            await session.commit()
 
             if row is not None:
                 # Trigger downstream graph cleanup
