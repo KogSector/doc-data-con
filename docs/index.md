@@ -56,10 +56,10 @@ GET /health/detailed
 #### Source Management
 ```http
 # List all sources
-GET /api/v1/sources
+GET /api/sources
 
 # Create new source
-POST /api/v1/sources
+POST /api/sources
 {
   "name": "GitHub Repository",
   "type": "github",
@@ -71,22 +71,22 @@ POST /api/v1/sources
 }
 
 # Get source details
-GET /api/v1/sources/{source_id}
+GET /api/sources/{source_id}
 
 # Update source
-PUT /api/v1/sources/{source_id}
+PUT /api/sources/{source_id}
 
 # Delete source
-DELETE /api/v1/sources/{source_id}
+DELETE /api/sources/{source_id}
 ```
 
 #### Sync Operations
 ```http
 # Trigger sync for source
-POST /api/v1/sources/{source_id}/sync
+POST /api/sources/{source_id}/sync
 
 # Get sync status
-GET /api/v1/sources/{source_id}/sync/status
+GET /api/sources/{source_id}/sync/status
 
 # List sync jobs
 GET /api/v1/sync/jobs
@@ -428,10 +428,10 @@ Use Cases: Docker, Kubernetes, CI/CD, application config
 #### Source Management
 ```http
 # List all configured sources
-GET /api/v1/sources
+GET /api/sources
 
 # Add new source
-POST /api/v1/sources
+POST /api/sources
 {
   "type": "github",
   "name": "My Repository",
@@ -442,13 +442,13 @@ POST /api/v1/sources
 }
 
 # Get source details
-GET /api/v1/sources/{source_id}
+GET /api/sources/{source_id}
 
 # Update source configuration
-PUT /api/v1/sources/{source_id}
+PUT /api/sources/{source_id}
 
 # Delete source
-DELETE /api/v1/sources/{source_id}
+DELETE /api/sources/{source_id}
 ```
 
 #### Sync Operations
