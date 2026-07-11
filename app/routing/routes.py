@@ -91,6 +91,17 @@ class RouteFileResponse(BaseModel):
 
 
 # External Routes Models
+class UrlCreateRequest(BaseModel):
+    url: str
+    title: str = ""
+    description: str = ""
+    tags: List[str] = []
+
+class UrlUpdateRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    tags: List[str] | None = None
+
 class GoogleDriveCallbackRequest(BaseModel):
     code: str
 
@@ -497,6 +508,75 @@ async def sync_source_endpoint(source_id: str, background_tasks: BackgroundTasks
 # External API Routes (Cloud Storage & URLs)
 # =============================================================================
 
+
+@router.post("/api/v1/external/urls")
+async def create_url(request: UrlCreateRequest, http_request: Request):
+    user_id = parse_user_id(http_request.headers.get("x-user-id"))
+    async with get_session() as session:
+        from app.infra.db.postgres import Source
+        new_source = Source(
+            user_id=user_id,
+            type="url",
+            uri=request.url,
+            name=request.title or request.url,
+            source_metadata={"description": request.description, "tags": request.tags},
+        )
+        session.add(new_source)
+        await session.commit()
+        await session.refresh(new_source)
+        return {"success": True, "id": str(new_source.id)}
+
+@router.get("/api/v1/external/urls")
+async def get_urls(http_request: Request):
+    user_id = parse_user_id(http_request.headers.get("x-user-id"))
+    async with get_session() as session:
+        from sqlalchemy import select as sa_select
+        from app.infra.db.postgres import Source
+        result = await session.execute(sa_select(Source).where(Source.user_id == user_id, Source.type == "url"))
+        sources = result.scalars().all()
+        return {"data": [{"id": str(s.id), "url": s.uri, "title": s.name, "description": s.source_metadata.get("description", "") if s.source_metadata else "", "tags": s.source_metadata.get("tags", []) if s.source_metadata else [], "status": s.status, "created_at": s.created_at} for s in sources]}
+
+@router.delete("/api/v1/external/urls/{url_id}")
+async def delete_url(url_id: str, http_request: Request):
+    user_id = parse_user_id(http_request.headers.get("x-user-id"))
+    async with get_session() as session:
+        from sqlalchemy import select as sa_select
+        from app.infra.db.postgres import Source
+        result = await session.execute(sa_select(Source).where(Source.id == url_id, Source.user_id == user_id))
+        source = result.scalar_one_or_none()
+        if not source:
+            raise HTTPException(status_code=404, detail="URL not found")
+        await session.delete(source)
+        await session.commit()
+        return {"success": True}
+
+@router.put("/api/v1/external/urls/{url_id}")
+async def update_url(url_id: str, request: UrlUpdateRequest, http_request: Request):
+    user_id = parse_user_id(http_request.headers.get("x-user-id"))
+    async with get_session() as session:
+        from sqlalchemy import select as sa_select
+        from app.infra.db.postgres import Source
+        
+        try:
+            import uuid
+            url_uuid = uuid.UUID(url_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid URL ID format")
+            
+        result = await session.execute(sa_select(Source).where(Source.id == url_uuid, Source.user_id == user_id))
+        source = result.scalar_one_or_none()
+        if not source:
+            raise HTTPException(status_code=404, detail="URL not found")
+        if request.title is not None:
+            source.name = request.title
+        metadata = source.source_metadata or {}
+        if request.description is not None:
+            metadata["description"] = request.description
+        if request.tags is not None:
+            metadata["tags"] = request.tags
+        source.source_metadata = metadata
+        await session.commit()
+        return {"success": True}
 
 @router.get("/api/v1/external/browse/{provider}")
 async def browse_provider_files(provider: str, http_request: Request, path: Optional[str] = ""):
