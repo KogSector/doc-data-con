@@ -339,12 +339,19 @@ async def sync_uploaded_files(source_id: str, uri: str, metadata: Dict[str, Any]
             
             if tasks:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
+                success_count = 0
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):
                         logger.error("Failed to process file", error=str(result))
+                    else:
+                        success_count += 1
+                        
+                if success_count == 0:
+                    logger.error("Failed to trigger unified-processor for any uploaded files")
+                    return False
+                else:
+                    logger.info(f"Successfully triggered unified-processor for {success_count}/{len(tasks)} uploaded files")
 
-            logger.info("Successfully triggered unified-processor for uploaded files")
-            
             # Clean up the temporary directory after processing
             if target_dir.exists():
                 import shutil
