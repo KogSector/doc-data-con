@@ -595,8 +595,9 @@ async def browse_provider_files(provider: str, http_request: Request, path: Opti
         try:
             tokens = await client.get_auth_token(user_id, provider_name)
         except HTTPException as e:
-            # If onedrive fails, fallback to windowslive
-            if provider == "onedrive" and e.status_code == 401:
+            # Safety-net fallback: auth-middleware now resolves provider aliases internally,
+            # but keep this in case of older auth-middleware deployments.
+            if provider == "onedrive" and e.status_code in (401, 404):
                 try:
                     tokens = await client.get_auth_token(user_id, "windowslive")
                 except HTTPException:
@@ -606,7 +607,7 @@ async def browse_provider_files(provider: str, http_request: Request, path: Opti
 
         if not tokens or not tokens.get("access_token"):
             raise HTTPException(
-                status_code=401, detail=f"No active connection found for {provider}"
+                status_code=401, detail=f"No active connection found for {provider}. Please connect your account."
             )
     except HTTPException:
         raise

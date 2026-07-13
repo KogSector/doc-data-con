@@ -315,9 +315,11 @@ class ServiceClient:
                     provider=provider,
                     error=error_msg,
                 )
+                # Distinguish between "no connection exists" and "token refresh failed"
+                status_code = 404 if "not found" in error_msg.lower() or "invalid" in error_msg.lower() else 401
                 raise HTTPException(
-                    status_code=401,
-                    detail=f"Failed to fetch credentials for {provider}. Re-connect account. Details: {error_msg}",
+                    status_code=status_code,
+                    detail=f"Failed to fetch credentials for {provider}. Details: {error_msg}",
                 )
 
         except HTTPException:
@@ -330,8 +332,8 @@ class ServiceClient:
                 error=str(e),
             )
             raise HTTPException(
-                status_code=401,
-                detail=f"Failed to fetch credentials for {provider}. Re-connect account. Error: {str(e)}",
+                status_code=500,
+                detail=f"Failed to fetch credentials for {provider}. Error: {str(e)}",
             )
 
 
