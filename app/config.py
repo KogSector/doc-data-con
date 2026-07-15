@@ -4,7 +4,7 @@ Data Connector Service - Configuration
 
 from functools import lru_cache
 from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic import Field, validator, AliasChoices
 import tempfile
 import os
 
@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     )
 
     # Downstream service URLs
-    doc_uni_proc_url: str = Field(alias="DOC_UNI_PROC_URL")
-    doc_uni_proc_timeout_secs: int = Field(alias="DOC_UNI_PROC_TIMEOUT_SECS", default=180)
-    doc_uni_proc_retry_attempts: int = Field(alias="DOC_UNI_PROC_RETRY_ATTEMPTS", default=3)
+    doc_uni_proc_url: str = Field(validation_alias=AliasChoices("DOC_UNI_PROC_URL", "UNIFIED_PROCESSOR_URL"))
+    doc_uni_proc_timeout_secs: int = Field(validation_alias=AliasChoices("DOC_UNI_PROC_TIMEOUT_SECS", "UNIFIED_PROCESSOR_TIMEOUT_SECS"), default=180)
+    doc_uni_proc_retry_attempts: int = Field(validation_alias=AliasChoices("DOC_UNI_PROC_RETRY_ATTEMPTS", "UNIFIED_PROCESSOR_RETRY_ATTEMPTS"), default=3)
 
     # Auth Service
     auth_service_url: str = Field(alias="AUTH_SERVICE_URL")
