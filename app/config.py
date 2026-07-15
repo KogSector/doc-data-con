@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     )
 
     # Downstream service URLs
-    unified_processor_url: str = Field(alias="UNIFIED_PROCESSOR_URL")
-    unified_processor_timeout_secs: int = Field(alias="UNIFIED_PROCESSOR_TIMEOUT_SECS", default=180)
-    unified_processor_retry_attempts: int = Field(alias="UNIFIED_PROCESSOR_RETRY_ATTEMPTS", default=3)
+    doc_uni_proc_url: str = Field(alias="DOC_UNI_PROC_URL")
+    doc_uni_proc_timeout_secs: int = Field(alias="DOC_UNI_PROC_TIMEOUT_SECS", default=180)
+    doc_uni_proc_retry_attempts: int = Field(alias="DOC_UNI_PROC_RETRY_ATTEMPTS", default=3)
 
     # Auth Service
     auth_service_url: str = Field(alias="AUTH_SERVICE_URL")
@@ -36,8 +36,7 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = Field(alias="CORS_ORIGINS")
 
-    # Base URL for OAuth Callbacks
-    base_url: str = Field(alias="BASE_URL")
+
 
     # Google Drive Connector
     google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")

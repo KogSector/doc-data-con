@@ -15,9 +15,9 @@ logger = structlog.get_logger()
 class HttpDocumentProcessor:
     def __init__(self):
         self.settings = get_settings()
-        self.base_url = self.settings.unified_processor_url
-        self.timeout = getattr(self.settings, 'unified_processor_timeout_secs', 180)
-        self.retry_attempts = getattr(self.settings, 'unified_processor_retry_attempts', 3)
+        self.base_url = self.settings.doc_uni_proc_url
+        self.timeout = getattr(self.settings, 'doc_uni_proc_timeout_secs', 180)
+        self.retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 3)
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=30.0)

@@ -106,7 +106,7 @@ class ServiceClient:
             return False
 
         url_map = {
-            "unified-processor": self.settings.unified_processor_url,
+            "doc-uni-proc": self.settings.doc_uni_proc_url,
         }
 
         base_url = url_map.get(service)
@@ -158,7 +158,7 @@ class ServiceClient:
                 status_code=500, detail="httpx dependency not available for internal HTTP call"
             )
 
-        base_url = self.settings.unified_processor_url
+        base_url = self.settings.doc_uni_proc_url
         url = f"{base_url}{endpoint}"
 
         logger.info(

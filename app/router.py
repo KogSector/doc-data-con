@@ -83,14 +83,14 @@ class FileRouter:
 
         if file_type == FileType.CODE:
             target_service = "unified-processor"
-            target_url = self.settings.unified_processor_url
+            target_url = self.settings.doc_uni_proc_url
         elif file_type == FileType.DOCUMENT:
             target_service = "unified-processor"
-            target_url = self.settings.unified_processor_url
+            target_url = self.settings.doc_uni_proc_url
         else:
             # Default unknown files to unified-processor (it can handle all file types)
             target_service = "unified-processor"
-            target_url = self.settings.unified_processor_url
+            target_url = self.settings.doc_uni_proc_url
             file_type = FileType.DOCUMENT
 
         logger.debug(

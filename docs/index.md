@@ -523,7 +523,7 @@ AUTH_MIDDLEWARE_GRPC_ADDR=auth-middleware:50058
 # HTTP Service URLs
 AUTH_SERVICE_URL=https://auth-middleware-k3bb.onrender.com
 FEATURE_TOGGLE_SERVICE_URL=http://feature-toggle:3099
-BASE_URL=http://localhost:3030
+
 
 # Shared Storage
 DOWNLOADS_BASE_PATH=/shared/downloads
