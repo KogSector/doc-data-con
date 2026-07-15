@@ -52,9 +52,7 @@ class AuthMiddleware:
         from app.config import get_settings
 
         settings = get_settings()
-        self.auth_service_url = auth_service_url or getattr(
-            settings, "auth_service_url", "http://localhost:3010"
-        )
+        self.auth_service_url = auth_service_url or settings.auth_service_url
 
         self._client = httpx.AsyncClient(timeout=5.0)
 

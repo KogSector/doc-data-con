@@ -77,9 +77,7 @@ class GoogleDriveConnector(BaseConnector):
 
         self.client_id = settings.google_client_id
         self.client_secret = settings.google_client_secret
-        self.redirect_uri = (
-            settings.google_redirect_uri or "http://localhost:3019/api/v1/gdrive/callback"
-        )
+        self.redirect_uri = settings.google_redirect_uri
         self._service: Any = None
         self._credentials: Any = None
 
