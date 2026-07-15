@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Service configuration
     service_name: str = "data-connector"
-    port: int = Field(alias="DATA_CONNECTOR_PORT")
+    port: int = Field(alias="DOC_DATA_CON_PORT")
     host: str = Field(alias="HOST")
     debug: bool = Field(alias="DEBUG")
 
@@ -49,20 +49,6 @@ class Settings(BaseSettings):
     notion_client_secret: str | None = Field(default=None, alias="NOTION_CLIENT_SECRET")
     notion_redirect_uri: str | None = Field(default=None, alias="NOTION_REDIRECT_URI")
 
-    # GitHub OAuth
-    github_client_id: str | None = Field(default=None, alias="GITHUB_CLIENT_ID")
-    github_client_secret: str | None = Field(default=None, alias="GITHUB_CLIENT_SECRET")
-    github_access_token: str | None = Field(default=None, alias="GITHUB_ACCESS_TOKEN")
-    github_webhook_secret: str | None = Field(default=None, alias="GITHUB_WEBHOOK_SECRET")
-
-    # GitLab OAuth
-    gitlab_client_id: str | None = Field(default=None, alias="GITLAB_CLIENT_ID")
-    gitlab_client_secret: str | None = Field(default=None, alias="GITLAB_CLIENT_SECRET")
-    gitlab_webhook_secret: str | None = Field(default=None, alias="GITLAB_WEBHOOK_SECRET")
-
-    # Bitbucket OAuth
-    bitbucket_client_id: str | None = Field(default=None, alias="BITBUCKET_CLIENT_ID")
-    bitbucket_client_secret: str | None = Field(default=None, alias="BITBUCKET_CLIENT_SECRET")
 
     # Microsoft OAuth (OneDrive/SharePoint)
     microsoft_client_id: str | None = Field(default=None, alias="MICROSOFT_CLIENT_ID")
