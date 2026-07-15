@@ -521,7 +521,7 @@ UNIFIED_PROCESSOR_GRPC_ADDR=localhost:50053
 AUTH_MIDDLEWARE_GRPC_ADDR=auth-middleware:50058
 
 # HTTP Service URLs
-AUTH_SERVICE_URL=https://auth-middleware-k3bb.onrender.com
+AUTH_SERVICE_URL=https://auth-middleware-fcg0.onrender.com
 FEATURE_TOGGLE_SERVICE_URL=http://feature-toggle:3099
 
 
