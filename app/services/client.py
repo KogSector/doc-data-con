@@ -214,6 +214,11 @@ class ServiceClient:
                         raise HTTPException(
                             status_code=503, detail=f"Unified-processor unreachable at {base_url}"
                         )
+        except Exception as e:
+            if not isinstance(e, HTTPException):
+                logger.error("[SERVICE-CLIENT] Unexpected error", error=str(e))
+                raise HTTPException(status_code=500, detail=str(e))
+            raise
 
     async def delete_graph_group(self, group_id: str, user_id: str) -> bool:
         """
