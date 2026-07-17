@@ -66,7 +66,10 @@ class HttpDocumentProcessor:
                         await asyncio.sleep(wait_time)
                         continue
                         
-                error_msg = f"HTTP {response.status_code}: {response.text}"
+                error_body = response.text
+                if len(error_body) > 200:
+                    error_body = error_body[:200] + "... [truncated]"
+                error_msg = f"HTTP {response.status_code}: {error_body}"
                 logger.error("Failed to process document", filename=filename, error=error_msg)
                 return False, 0, int((time.time() - start_time) * 1000), error_msg
                 
