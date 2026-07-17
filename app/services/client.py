@@ -172,26 +172,48 @@ class ServiceClient:
                 req_headers = {"X-API-Key": self.settings.internal_api_key}
                 if headers:
                     req_headers.update(headers)
-                response = await client.post(url, json=payload, headers=req_headers)
-                if response.status_code >= 400:
-                    logger.error(
-                        "[SERVICE-CLIENT] Unified-processor returned error",
-                        status_code=response.status_code,
-                        body=response.text[:500],
-                    )
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Unified-processor error: {response.text[:300]}",
-                    )
-                return response.json()
-        except httpx.ConnectError as e:
-            logger.error("[SERVICE-CLIENT] Cannot reach unified-processor", url=url, error=str(e))
-            raise HTTPException(
-                status_code=503, detail=f"Unified-processor unreachable at {base_url}"
-            )
-        except httpx.TimeoutException:
-            logger.error("[SERVICE-CLIENT] Unified-processor request timed out", url=url)
-            raise HTTPException(status_code=504, detail="Unified-processor request timed out")
+                import asyncio
+                retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 7)
+                for attempt in range(retry_attempts):
+                    try:
+                        response = await client.post(url, json=payload, headers=req_headers)
+                        
+                        if response.status_code >= 500:
+                            if attempt < retry_attempts - 1:
+                                wait_time = 2 ** attempt
+                                logger.warning(
+                                    f"[SERVICE-CLIENT] Server error {response.status_code}, retrying in {wait_time}s",
+                                )
+                                await asyncio.sleep(wait_time)
+                                continue
+
+                        if response.status_code >= 400:
+                            error_body = response.text
+                            if len(error_body) > 200:
+                                error_body = error_body[:200] + "... [truncated]"
+                            logger.error(
+                                "[SERVICE-CLIENT] Unified-processor returned error",
+                                status_code=response.status_code,
+                                body=error_body,
+                            )
+                            raise HTTPException(
+                                status_code=response.status_code,
+                                detail=f"Unified-processor error: {error_body}",
+                            )
+                        return response.json()
+                    except (httpx.ConnectError, httpx.TimeoutException) as e:
+                        if attempt < retry_attempts - 1:
+                            wait_time = 2 ** attempt
+                            logger.warning(
+                                f"[SERVICE-CLIENT] Request error {str(e)}, retrying in {wait_time}s",
+                                error=str(e)
+                            )
+                            await asyncio.sleep(wait_time)
+                            continue
+                        logger.error("[SERVICE-CLIENT] Cannot reach unified-processor", url=url, error=str(e))
+                        raise HTTPException(
+                            status_code=503, detail=f"Unified-processor unreachable at {base_url}"
+                        )
 
     async def delete_graph_group(self, group_id: str, user_id: str) -> bool:
         """
