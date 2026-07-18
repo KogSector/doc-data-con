@@ -173,14 +173,14 @@ class ServiceClient:
                 if headers:
                     req_headers.update(headers)
                 import asyncio
-                retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 7)
+                retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 10)
                 for attempt in range(retry_attempts):
                     try:
                         response = await client.post(url, json=payload, headers=req_headers)
                         
                         if response.status_code >= 500:
                             if attempt < retry_attempts - 1:
-                                wait_time = 2 ** attempt
+                                wait_time = min(30, 2 ** attempt)
                                 logger.warning(
                                     f"[SERVICE-CLIENT] Server error {response.status_code}, retrying in {wait_time}s",
                                 )
