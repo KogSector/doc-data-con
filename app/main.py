@@ -99,7 +99,7 @@ def create_app() -> FastAPI:
 
     # Add correlation ID middleware
     from app.utils.logger import CorrelationIdMiddleware, configure_logging
-    configure_logging(json_logs=False) # Enable JSON logs in prod
+    configure_logging(json_logs=True) # Enable JSON logs in prod
     app.add_middleware(CorrelationIdMiddleware)
 
     # Setup error handlers
