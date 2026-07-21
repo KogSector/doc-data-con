@@ -168,21 +168,22 @@ class ServiceClient:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                req_headers = {"X-API-Key": self.settings.internal_api_key}
-                if headers:
-                    req_headers.update(headers)
-                import asyncio
-                retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 10)
-                for attempt in range(retry_attempts):
-                    try:
+            import asyncio
+            req_headers = {"X-API-Key": self.settings.internal_api_key}
+            if headers:
+                req_headers.update(headers)
+            retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 10)
+
+            for attempt in range(retry_attempts):
+                try:
+                    async with httpx.AsyncClient(timeout=timeout) as client:
                         response = await client.post(url, json=payload, headers=req_headers)
                         
                         if response.status_code >= 500:
                             if attempt < retry_attempts - 1:
                                 wait_time = min(30, 2 ** attempt)
                                 logger.warning(
-                                    f"[SERVICE-CLIENT] Server error {response.status_code}, retrying in {wait_time}s",
+                                    f"[SERVICE-CLIENT] Server error {response.status_code}, retrying in {wait_time}s (attempt {attempt + 1}/{retry_attempts})",
                                 )
                                 await asyncio.sleep(wait_time)
                                 continue
@@ -201,19 +202,19 @@ class ServiceClient:
                                 detail=f"Unified-processor error: {error_body}",
                             )
                         return response.json()
-                    except (httpx.RequestError, httpx.HTTPError) as e:
-                        if attempt < retry_attempts - 1:
-                            wait_time = min(30, 2 ** attempt)
-                            logger.warning(
-                                f"[SERVICE-CLIENT] Request/Protocol error ({str(e)}), retrying in {wait_time}s (attempt {attempt + 1}/{retry_attempts})",
-                                error=str(e)
-                            )
-                            await asyncio.sleep(wait_time)
-                            continue
-                        logger.error("[SERVICE-CLIENT] Cannot reach unified-processor after retries", url=url, error=str(e))
-                        raise HTTPException(
-                            status_code=503, detail=f"Unified-processor unreachable at {base_url}: {str(e)}"
+                except (httpx.RequestError, httpx.HTTPError) as e:
+                    if attempt < retry_attempts - 1:
+                        wait_time = min(30, 2 ** attempt)
+                        logger.warning(
+                            f"[SERVICE-CLIENT] Request/Protocol error ({str(e)}), retrying in {wait_time}s (attempt {attempt + 1}/{retry_attempts})",
+                            error=str(e)
                         )
+                        await asyncio.sleep(wait_time)
+                        continue
+                    logger.error("[SERVICE-CLIENT] Cannot reach unified-processor after retries", url=url, error=str(e))
+                    raise HTTPException(
+                        status_code=503, detail=f"Unified-processor unreachable at {base_url}: {str(e)}"
+                    )
         except Exception as e:
             if not isinstance(e, HTTPException):
                 logger.error("[SERVICE-CLIENT] Unexpected error", error=str(e))
