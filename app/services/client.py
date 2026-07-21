@@ -201,18 +201,18 @@ class ServiceClient:
                                 detail=f"Unified-processor error: {error_body}",
                             )
                         return response.json()
-                    except (httpx.ConnectError, httpx.TimeoutException) as e:
+                    except (httpx.RequestError, httpx.HTTPError) as e:
                         if attempt < retry_attempts - 1:
-                            wait_time = 2 ** attempt
+                            wait_time = min(30, 2 ** attempt)
                             logger.warning(
-                                f"[SERVICE-CLIENT] Request error {str(e)}, retrying in {wait_time}s",
+                                f"[SERVICE-CLIENT] Request/Protocol error ({str(e)}), retrying in {wait_time}s (attempt {attempt + 1}/{retry_attempts})",
                                 error=str(e)
                             )
                             await asyncio.sleep(wait_time)
                             continue
-                        logger.error("[SERVICE-CLIENT] Cannot reach unified-processor", url=url, error=str(e))
+                        logger.error("[SERVICE-CLIENT] Cannot reach unified-processor after retries", url=url, error=str(e))
                         raise HTTPException(
-                            status_code=503, detail=f"Unified-processor unreachable at {base_url}"
+                            status_code=503, detail=f"Unified-processor unreachable at {base_url}: {str(e)}"
                         )
         except Exception as e:
             if not isinstance(e, HTTPException):
