@@ -314,11 +314,22 @@ async def sync_uploaded_files(source_id: str, uri: str, metadata: Dict[str, Any]
             
             # Send each file in the target directory to the unified-processor
             tasks = []
+            import gzip
             for file_path in target_dir.iterdir():
                 if file_path.is_file():
                     with open(file_path, "rb") as f:
                         file_content = f.read()
                         
+                    # Gzip compress payloads > 50KB to stay well below Render's 10MB payload proxy limit
+                    if len(file_content) > 50_000:
+                        compressed = gzip.compress(file_content)
+                        if len(compressed) < len(file_content):
+                            logger.info(
+                                f"Gzip compressed document for transfer: {len(file_content)} -> {len(compressed)} bytes",
+                                filename=file_path.name
+                            )
+                            file_content = compressed
+
                     b64_content = base64.b64encode(file_content).decode("utf-8")
                     
                     logger.info(f"Sending base64 encoded document to unified-processor for {file_path.name}")
