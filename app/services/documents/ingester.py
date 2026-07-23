@@ -237,6 +237,9 @@ async def sync_generic_source_local(
         
         await _update_source_metadata_files(source_id, uploaded_files_info)
 
+        # Warm up downstream doc-uni-proc service to handle Render cold starts
+        await get_document_processor().ensure_service_ready(max_wait_seconds=60)
+
         for file_info in files_processed:
             try:
                 # the array object usually has 'path', 'content', 'name'

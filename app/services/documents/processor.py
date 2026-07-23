@@ -17,11 +17,31 @@ class HttpDocumentProcessor:
         self.settings = get_settings()
         self.base_url = self.settings.doc_uni_proc_url
         self.timeout = getattr(self.settings, 'doc_uni_proc_timeout_secs', 180)
-        self.retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 3)
+        self.retry_attempts = getattr(self.settings, 'doc_uni_proc_retry_attempts', 8)
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=30.0)
         )
+
+    async def ensure_service_ready(self, max_wait_seconds: int = 60) -> bool:
+        """
+        Wait for downstream doc-uni-proc to wake up (Render cold start) and be responsive.
+        """
+        endpoint = f"{self.base_url.rstrip('/')}/health"
+        start_time = time.time()
+        attempt = 0
+        while (time.time() - start_time) < max_wait_seconds:
+            attempt += 1
+            try:
+                response = await self.client.get(endpoint, timeout=10.0)
+                if response.status_code == 200:
+                    logger.info(f"[DOC-PROCESSOR] Downstream doc-uni-proc is ready (attempt {attempt})")
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(2)
+        logger.warning(f"[DOC-PROCESSOR] Timed out waiting for doc-uni-proc to become ready after {max_wait_seconds}s")
+        return False
 
     async def process_document(self, source_id: str, file_id: str, filename: str, content: bytes | str, metadata: Dict[str, Any], user_id: str = "system") -> Tuple[bool, int, int, str]:
         """
@@ -61,8 +81,8 @@ class HttpDocumentProcessor:
                 
                 if response.status_code >= 500:
                     if attempt < self.retry_attempts - 1:
-                        wait_time = 2 ** attempt
-                        logger.warning(f"Server error {response.status_code}, retrying in {wait_time}s", filename=filename)
+                        wait_time = min(2 ** attempt, 8)
+                        logger.warning(f"Server error {response.status_code} (Render cold start?), retrying attempt {attempt + 1}/{self.retry_attempts} in {wait_time}s", filename=filename)
                         await asyncio.sleep(wait_time)
                         continue
                         
@@ -75,8 +95,8 @@ class HttpDocumentProcessor:
                 
             except httpx.RequestError as e:
                 if attempt < self.retry_attempts - 1:
-                    wait_time = 2 ** attempt
-                    logger.warning(f"Request error {str(e)}, retrying in {wait_time}s", filename=filename)
+                    wait_time = min(2 ** attempt, 8)
+                    logger.warning(f"Request error {str(e)}, retrying attempt {attempt + 1}/{self.retry_attempts} in {wait_time}s", filename=filename)
                     await asyncio.sleep(wait_time)
                     continue
                 error_msg = f"Request error: {str(e)}"
