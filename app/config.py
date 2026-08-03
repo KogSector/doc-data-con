@@ -94,10 +94,6 @@ class Settings(BaseSettings):
     # Downloads folder configuration
     downloads_folder: str = Field(default_factory=lambda: os.path.join(tempfile.gettempdir(), "confuse-downloads"), alias="DOWNLOADS_BASE_PATH")
 
-
-
-    environment: str = Field(alias="ENVIRONMENT")
-
     # FalkorDB Configuration
     falkordb_host: str = Field(
         alias="FALKORDB_HOST",
