@@ -97,11 +97,11 @@ class Settings(BaseSettings):
     # FalkorDB Configuration
     falkordb_host: str = Field(
         alias="FALKORDB_HOST",
-        default="r-6jissuruar.instance-tju0dagr0.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud",
+        default="r-6jissuruar.instance-ivah2xvml.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud",
     )
-    falkordb_port: int = Field(alias="FALKORDB_PORT", default=64172)
+    falkordb_port: int = Field(alias="FALKORDB_PORT", default=50860)
     falkordb_username: str | None = Field(alias="FALKORDB_USERNAME", default="falkordb")
-    falkordb_password: str | None = Field(alias="FALKORDB_PASSWORD", default="falkordb")
+    falkordb_password: str | None = Field(alias="FALKORDB_PASSWORD")
 
     class Config:
         env_file = [".env.map", ".env.secret", ".env.local"]
