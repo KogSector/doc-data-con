@@ -100,8 +100,8 @@ class Settings(BaseSettings):
         default="r-6jissuruar.instance-ivah2xvml.hc-7up0crkyn.ap-south-1.aws.f2e0a955bb84.cloud",
     )
     falkordb_port: int = Field(alias="FALKORDB_PORT", default=50860)
-    falkordb_username: str | None = Field(alias="FALKORDB_USERNAME", default="falkordb")
-    falkordb_password: str | None = Field(alias="FALKORDB_PASSWORD")
+    falkordb_username: str | None = Field(alias="FALKORDB_USERNAME", default="adminconfuse")
+    falkordb_password: str | None = Field(default="graph4confuse", alias="FALKORDB_PASSWORD")
 
     class Config:
         env_file = [".env.map", ".env.secret", ".env.local"]
