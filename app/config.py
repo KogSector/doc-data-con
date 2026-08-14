@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # PostgreSQL configuration (for sources and jobs management)
     database_url: str = Field(
-        alias="POSTGRES_URL", description="PostgreSQL connection URL for sources and jobs"
+        alias="DATABASE_URL", description="PostgreSQL connection URL for sources and jobs"
     )
 
     # Downstream service URLs
