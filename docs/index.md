@@ -526,7 +526,10 @@ FEATURE_TOGGLE_SERVICE_URL=http://feature-toggle:3099
 
 
 # Shared Storage
-DOWNLOADS_BASE_PATH=/shared/downloads
+# DOWNLOADS_BASE_PATH - Optional: Override default temp directory location
+# Default: System temp directory + "confuse-downloads"
+# Production: Set to shared volume path (e.g., /shared/downloads)
+# DOWNLOADS_BASE_PATH=/shared/downloads
 
 # OAuth Callback URLs
 GOOGLE_REDIRECT_URI=http://localhost:3030/auth/google/callback
