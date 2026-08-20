@@ -108,11 +108,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Add error handling middleware
+    # Configure CORS (MUST be first middleware to catch OPTIONS requests early)
+    origins = [origin.strip() for origin in settings.cors_origins.split(",")]
 
-    # Add security headers middleware
-    # from app.middleware.security import SecurityHeadersMiddleware
-    # app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Add error handling middleware
     app.add_middleware(ErrorHandlingMiddleware)
@@ -147,17 +152,6 @@ def create_app() -> FastAPI:
         )
     except ImportError:
         logger.warning("confuse_common not installed, skipping RateLimitMiddleware")
-
-    # Configure CORS (MUST be outermost middleware to catch OPTIONS requests early)
-    origins = [origin.strip() for origin in settings.cors_origins.split(",")]
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
     app.include_router(documents_router)
 
