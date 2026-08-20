@@ -61,6 +61,26 @@ async def lifespan(app: FastAPI):
 
         # Removed dead TokenRefreshService code
 
+    # --- Unified Processor Keep-Alive ---
+    # Keep doc-uni-proc active by pinging it every 4 minutes
+    # This prevents Render free tier spin-down
+    async def keepalive_doc_uni_proc():
+        import httpx
+        processor_url = os.getenv("DOC_UNI_PROC_URL", "http://doc-uni-proc:8090")
+        
+        while True:
+            await asyncio.sleep(240)  # 4 minutes
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(f"{processor_url}/health")
+                    if response.status_code == 200:
+                        logger.debug(f"Keep-alive ping successful for doc-uni-proc")
+            except Exception as e:
+                logger.warning(f"Keep-alive ping failed for doc-uni-proc: {e}")
+
+    import os
+    asyncio.create_task(keepalive_doc_uni_proc())
+    logger.info("doc-uni-proc keep-alive task started")
 
     logger.info("Application startup complete")
     yield
