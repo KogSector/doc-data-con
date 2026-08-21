@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # Auth Service
     auth_service_url: str = Field(alias="AUTH_SERVICE_URL")
+    auth_url: str = Field(default="http://auth-middleware:8080", alias="AUTH_URL")
     # Auth middleware is contacted over HTTP; gRPC support has been removed from data-connector
     internal_api_key: str = Field(alias="INTERNAL_API_KEY")
 

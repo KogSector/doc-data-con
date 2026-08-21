@@ -13,6 +13,10 @@ from fastapi import (
     Query,
     UploadFile,
     File,
+)
+from app.config import get_settings
+
+logger = structlog.get_logger()
     Form,
     BackgroundTasks,
     Request,

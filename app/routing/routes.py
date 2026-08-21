@@ -11,6 +11,9 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Header, 
 from app.utils.user import parse_user_id
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
+from app.config import get_settings
+
+logger = structlog.get_logger()
 
 from app.models import (
     SourceResponse,
@@ -488,6 +491,21 @@ async def delete_source(source_id: str, http_request: Request):
 
         await session.delete(source)
         await session.commit()
+
+        # Update billing count
+        try:
+            import httpx
+            settings = get_settings()
+            async with httpx.AsyncClient() as http_client:
+                await http_client.post(
+                    f"{settings.auth_url}/billing/internal/update-doc-count",
+                    json={"userId": user_id, "delta": -1},
+                    headers={"X-API-Key": settings.internal_api_key},
+                    timeout=10.0
+                )
+            logger.info("[DOC-DELETE] Updated billing doc count", user_id=user_id)
+        except Exception as e:
+            logger.warning("[DOC-DELETE] Failed to update billing count", error=str(e))
 
         from app.services.client import get_service_client
         client = get_service_client()
