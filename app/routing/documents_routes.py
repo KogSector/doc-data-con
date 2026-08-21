@@ -425,6 +425,21 @@ async def upload_documents(
 
             logger.info("Source record created in database", source_id=str(source_id))
 
+            # Update billing count
+            try:
+                import httpx
+                settings = get_settings()
+                async with httpx.AsyncClient() as http_client:
+                    await http_client.post(
+                        f"{settings.auth_url}/billing/internal/update-doc-count",
+                        json={"userId": user_id, "delta": 1},
+                        headers={"X-API-Key": settings.internal_api_key},
+                        timeout=10.0
+                    )
+                logger.info("[DOC-CREATE] Updated billing doc count", user_id=user_id)
+            except Exception as e:
+                logger.warning("[DOC-CREATE] Failed to update billing count", error=str(e))
+
         # 4. Trigger the initial sync background task
         # This will verify the directory and then hit unified-processor's /api/v1/process/local
         background_tasks.add_task(
