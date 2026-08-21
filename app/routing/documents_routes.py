@@ -13,10 +13,6 @@ from fastapi import (
     Query,
     UploadFile,
     File,
-)
-from app.config import get_settings
-
-logger = structlog.get_logger()
     Form,
     BackgroundTasks,
     Request,
@@ -24,9 +20,9 @@ logger = structlog.get_logger()
 from pydantic import BaseModel
 from pathlib import Path
 from app.utils.user import parse_user_id
+from app.config import get_settings
 
 from app.infra.db.postgres import get_session, Source
-from app.config import get_settings
 from app.services.documents.ingester import trigger_initial_sync
 
 logger = structlog.get_logger()
