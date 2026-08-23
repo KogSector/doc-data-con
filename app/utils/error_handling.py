@@ -6,7 +6,10 @@ import structlog
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR, HTTP_422_UNPROCESSABLE_ENTITY
+from starlette.status import (
+    HTTP_500_INTERNAL_SERVER_ERROR,
+    HTTP_422_UNPROCESSABLE_CONTENT,
+)
 import traceback
 from app.utils.validation import ValidationError
 
@@ -55,12 +58,12 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 "Validation error", error=str(exc), path=request.url.path, method=request.method
             )
             return JSONResponse(
-                status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=HTTP_422_UNPROCESSABLE_CONTENT,
                 content={
                     "error": {
                         "message": str(exc),
                         "type": "validation_error",
-                        "status_code": HTTP_422_UNPROCESSABLE_ENTITY,
+                        "status_code": HTTP_422_UNPROCESSABLE_CONTENT,
                     }
                 },
             )
@@ -126,12 +129,12 @@ async def handle_validation_error(request: Request, exc: ValidationError) -> JSO
     logger.warning("Validation error", error=str(exc), path=request.url.path, method=request.method)
 
     return JSONResponse(
-        status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=HTTP_422_UNPROCESSABLE_CONTENT,
         content={
             "error": {
                 "message": str(exc),
                 "type": "validation_error",
-                "status_code": HTTP_422_UNPROCESSABLE_ENTITY,
+                "status_code": HTTP_422_UNPROCESSABLE_CONTENT,
             }
         },
     )

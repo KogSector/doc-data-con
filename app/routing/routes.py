@@ -21,7 +21,7 @@ from app.models import (
     JobStatus,
     IngestRequest,
 )
-from app.infra.db.postgres import get_session, Source
+from app.infra.db.postgres import get_session, Document
 from app.router import get_router
 from app.services import get_job_manager, get_service_client
 from app.config import get_settings
@@ -178,9 +178,9 @@ async def get_status():
 async def create_source(
     request: SourceCreateRequest, http_request: Request, background_tasks: BackgroundTasks
 ):
-    """Create a new data source."""
+    """Create a new document source (stores in documents table)."""
     logger.info(
-        "[SOURCE-CREATE] Starting source creation",
+        "[SOURCE-CREATE] Starting document source creation",
         name=request.name,
         type=request.type.value,
         uri=request.uri,
@@ -194,12 +194,16 @@ async def create_source(
         logger.error("Unexpected validation error", error=str(e))
         raise HTTPException(status_code=500, detail="Validation error")
 
+    # Reject repository types — those must go through repo-data-con
+    if request.type.value in ["github", "gitlab", "bitbucket"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Repository sources must be created via repo-data-con /api/repositories",
+        )
+
     async with get_session() as session:
         # Auto-fetch OAuth tokens from auth-middleware for providers that need them
         providers_needing_tokens = [
-            "github",
-            "gitlab",
-            "bitbucket",
             "google-drive",
             "onedrive",
             "gdrive",
@@ -208,17 +212,14 @@ async def create_source(
             "notion",
             "custom",
         ]
-        if not request.credentials and request.type in providers_needing_tokens:
+        if not request.credentials and request.type.value in providers_needing_tokens:
             user_id = http_request.headers.get("x-user-id")
             if not user_id:
                 raise HTTPException(status_code=401, detail="User authentication required")
             client = get_service_client()
             try:
-                # Map source type to the provider name stored in auth-middleware
                 provider_name = request.type.value
-                if provider_name == "gdrive":
-                    provider_name = "google"
-                elif provider_name == "google-drive":
+                if provider_name in ("gdrive", "google-drive"):
                     provider_name = "google"
                 elif provider_name == "custom":
                     provider_name = "custom_apps"
@@ -237,98 +238,65 @@ async def create_source(
 
         from sqlalchemy import select as sa_select
 
-        existing = await session.execute(sa_select(Source).where(Source.uri == request.uri))
-        existing_source = existing.scalar_one_or_none()
-
         request_user_id = parse_user_id(
             http_request.headers.get("x-user-id")
         )
 
-        if existing_source:
-            if existing_source.user_id == request_user_id:
-                logger.info(
-                    "[SOURCE-CREATE] Source already exists for same user, updating instead",
-                    source_id=str(existing_source.id),
-                )
-                existing_source.name = request.name
-                existing_source.source_metadata = {
-                    "credentials": request.credentials,
-                    "branch": request.branch,
-                    "include_patterns": request.include_patterns,
-                    "exclude_patterns": request.exclude_patterns,
-                    "metadata": request.metadata,
-                }
-                existing_source.status = "pending"
-                existing_source.updated_at = datetime.now(timezone.utc)
+        existing = await session.execute(sa_select(Document).where(Document.uri == request.uri, Document.user_id == request_user_id))
+        existing_doc = existing.scalar_one_or_none()
 
-                from app.infra.db.postgres import Repository
+        if existing_doc:
+            logger.info(
+                "[SOURCE-CREATE] Document already exists for same user, updating instead",
+                doc_id=str(existing_doc.id),
+            )
+            existing_doc.name = request.name
+            existing_doc.document_metadata = {
+                "credentials": request.credentials,
+                "branch": request.branch,
+                "include_patterns": request.include_patterns,
+                "exclude_patterns": request.exclude_patterns,
+                "metadata": request.metadata,
+            }
+            existing_doc.status = "pending"
+            existing_doc.updated_at = datetime.now(timezone.utc)
 
-                if request.type.value in ["github", "gitlab", "bitbucket"]:
-                    existing_repo = await session.execute(
-                        sa_select(Repository).where(Repository.url == request.uri)
-                    )
-                    existing_repo_obj = existing_repo.scalars().first()
-                    if not existing_repo_obj:
-                        repo = Repository(
-                            user_id=str(request_user_id),
-                            name=request.name,
-                            provider=request.type.value,
-                            url=request.uri,
-                            branch=request.branch or "main",
-                            source_id=str(existing_source.id),
-                            status="pending",
-                        )
-                        session.add(repo)
-                    else:
-                        existing_repo_obj.status = "pending"
-                        existing_repo_obj.source_id = str(existing_source.id)
-                        existing_repo_obj.branch = request.branch or "main"
-                        existing_repo_obj.name = request.name
-                        existing_repo_obj.updated_at = datetime.now(timezone.utc)
+            try:
+                await session.commit()
+            except IntegrityError as e:
+                await session.rollback()
+                raise HTTPException(status_code=409, detail=f"Document already exists: {str(e)}")
 
-                try:
-                    await session.commit()
-                except IntegrityError as e:
-                    await session.rollback()
-                    raise HTTPException(status_code=409, detail=f"Source already exists: {str(e)}")
+            await session.refresh(existing_doc)
 
-                await session.refresh(existing_source)
+            from app.services.documents.ingester import trigger_initial_sync
 
-                if existing_source.type in ["github", "gitlab", "bitbucket"]:
-                    raise HTTPException(status_code=400, detail="Repository sources must be created via repo-data-con")
-                else:
-                    from app.services.documents.ingester import trigger_initial_sync
+            background_tasks.add_task(
+                trigger_initial_sync,
+                str(existing_doc.id),
+                existing_doc.source,
+                existing_doc.document_metadata,
+            )
 
-                    background_tasks.add_task(
-                        trigger_initial_sync,
-                        str(existing_source.id),
-                        existing_source.type,
-                        existing_source.source_metadata,
-                    )
+            return SourceResponse(
+                id=str(existing_doc.id),
+                type=SourceType(existing_doc.source),
+                name=existing_doc.name,
+                uri=existing_doc.uri,
+                status=existing_doc.status,
+                created_at=existing_doc.created_at,
+                updated_at=existing_doc.updated_at,
+                metadata=existing_doc.document_metadata or {},
+                syncStarted=True,
+            )
 
-                return SourceResponse(
-                    id=str(existing_source.id),
-                    type=SourceType(existing_source.type),
-                    name=existing_source.name,
-                    uri=existing_source.uri,
-                    status=existing_source.status,
-                    created_at=existing_source.created_at,
-                    updated_at=existing_source.updated_at,
-                    metadata=existing_source.source_metadata or {},
-                    syncStarted=True,
-                )
-            else:
-                raise HTTPException(
-                    status_code=409,
-                    detail="This repository has already been connected by another user.",
-                )
-
-        source = Source(
+        doc = Document(
             user_id=request_user_id,
-            type=request.type.value,
+            doc_type=request.name.split(".")[-1] if "." in request.name else "unknown",
+            source=request.type.value,
             uri=request.uri,
             name=request.name,
-            source_metadata={
+            document_metadata={
                 "credentials": request.credentials,
                 "branch": request.branch,
                 "include_patterns": request.include_patterns,
@@ -337,56 +305,30 @@ async def create_source(
             },
         )
 
-        session.add(source)
-        await session.flush()
-
-        from app.infra.db.postgres import Repository
-
-        if request.type.value in ["github", "gitlab", "bitbucket"]:
-            existing_repo = await session.execute(
-                sa_select(Repository).where(Repository.url == request.uri)
-            )
-            existing_repo_obj = existing_repo.scalars().first()
-            if not existing_repo_obj:
-                repo = Repository(
-                    user_id=str(request_user_id),
-                    name=request.name,
-                    provider=request.type.value,
-                    url=request.uri,
-                    branch=request.branch or "main",
-                    source_id=str(source.id),
-                    status="pending",
-                )
-                session.add(repo)
-            else:
-                existing_repo_obj.status = "pending"
-                existing_repo_obj.source_id = str(source.id)
+        session.add(doc)
 
         try:
             await session.commit()
         except IntegrityError as e:
             await session.rollback()
-            raise HTTPException(status_code=409, detail=f"Source already exists: {str(e)}")
-        await session.refresh(source)
+            raise HTTPException(status_code=409, detail=f"Document already exists: {str(e)}")
+        await session.refresh(doc)
 
-        if source.type in ["github", "gitlab", "bitbucket"]:
-            raise HTTPException(status_code=400, detail="Repository sources must be created via repo-data-con")
-        else:
-            from app.services.documents.ingester import trigger_initial_sync
+        from app.services.documents.ingester import trigger_initial_sync
 
-            background_tasks.add_task(
-                trigger_initial_sync, str(source.id), source.type, source.source_metadata
-            )
+        background_tasks.add_task(
+            trigger_initial_sync, str(doc.id), doc.source, doc.document_metadata
+        )
 
         return SourceResponse(
-            id=str(source.id),
-            type=SourceType(source.type),
-            name=source.name,
-            uri=source.uri,
-            status=source.status,
-            created_at=source.created_at,
-            updated_at=source.updated_at,
-            metadata=source.source_metadata or {},
+            id=str(doc.id),
+            type=SourceType(doc.source),
+            name=doc.name,
+            uri=doc.uri,
+            status=doc.status,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+            metadata=doc.document_metadata or {},
             syncStarted=True,
         )
 
@@ -395,7 +337,7 @@ async def create_source(
 async def list_sources(
     http_request: Request, type: SourceType | None = None, limit: int = 50, offset: int = 0
 ):
-    """List all data sources."""
+    """List all document sources."""
     user_id = http_request.headers.get("x-user-id")
     if not user_id:
         raise HTTPException(status_code=401, detail="User authentication required")
@@ -403,93 +345,81 @@ async def list_sources(
     async with get_session() as session:
         from sqlalchemy import select
 
-        query = select(Source).where(Source.user_id == parse_user_id(user_id))
+        query = select(Document).where(Document.user_id == parse_user_id(user_id))
         if type:
-            query = query.where(Source.type == type.value)
+            query = query.where(Document.source == type.value)
         query = query.offset(offset).limit(limit)
         result = await session.execute(query)
-        sources = result.scalars().all()
+        docs = result.scalars().all()
 
         return {
             "sources": [
                 {
-                    "id": str(source.id),
-                    "type": source.type,
-                    "name": source.name,
-                    "uri": source.uri,
-                    "status": source.status,
-                    "created_at": source.created_at.isoformat(),
-                    "updated_at": source.updated_at.isoformat(),
-                    "metadata": source.source_metadata or {},
+                    "id": str(doc.id),
+                    "type": doc.source,
+                    "name": doc.name,
+                    "uri": doc.uri,
+                    "status": doc.status,
+                    "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                    "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+                    "metadata": doc.document_metadata or {},
                 }
-                for source in sources
+                for doc in docs
             ],
-            "total": len(sources),
+            "total": len(docs),
         }
 
 
 @router.get("/api/sources/{source_id}")
 async def get_source(source_id: str, http_request: Request):
-    """Get a specific source by ID."""
+    """Get a specific document source by ID."""
     user_id = http_request.headers.get("x-user-id")
     if not user_id:
         raise HTTPException(status_code=401, detail="User authentication required")
 
+    try:
+        rid = uuid.UUID(source_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid source ID format")
+
     async with get_session() as session:
-        from sqlalchemy import select
-
-        try:
-            query = select(Source).where(Source.id == uuid.UUID(source_id))
-            result = await session.execute(query)
-            source = result.scalar_one_or_none()
-        except Exception:
-            raise HTTPException(status_code=404, detail="Source not found")
-
-        if not source or source.user_id != parse_user_id(user_id):
+        doc = await session.get(Document, rid)
+        if not doc or doc.user_id != parse_user_id(user_id):
             raise HTTPException(status_code=404, detail="Source not found")
 
         return {
-            "id": str(source.id),
-            "type": source.type,
-            "name": source.name,
-            "uri": source.uri,
-            "status": source.status,
-            "created_at": source.created_at.isoformat(),
-            "updated_at": source.updated_at.isoformat(),
-            "metadata": source.source_metadata or {},
+            "id": str(doc.id),
+            "type": doc.source,
+            "name": doc.name,
+            "uri": doc.uri,
+            "status": doc.status,
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+            "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+            "metadata": doc.document_metadata or {},
         }
 
 
 @router.delete("/api/sources/{source_id}")
 async def delete_source(source_id: str, http_request: Request):
-    """Delete a data source."""
+    """Delete a document source."""
     user_id = http_request.headers.get("x-user-id")
     if not user_id:
         raise HTTPException(status_code=401, detail="User authentication required")
 
+    try:
+        source_uuid = uuid.UUID(source_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid source ID format")
+
     async with get_session() as session:
-        try:
-            source_uuid = uuid.UUID(source_id)
-            source = await session.get(Source, source_uuid)
-        except Exception:
+        doc = await session.get(Document, source_uuid)
+        if not doc:
             raise HTTPException(status_code=404, detail="Source not found")
 
-        if not source:
+        if doc.user_id != parse_user_id(user_id):
             raise HTTPException(status_code=404, detail="Source not found")
 
-        if source.user_id != parse_user_id(user_id):
-            raise HTTPException(status_code=404, detail="Source not found")
-
-        from app.infra.db.postgres import Repository
-        from sqlalchemy import select
-
-        repo_query = select(Repository).where(Repository.source_id == source_id)
-        repo_result = await session.execute(repo_query)
-        repo = repo_result.scalars().first()
-        if repo:
-            await session.delete(repo)
-
-        await session.delete(source)
+        await session.delete(doc)
         await session.commit()
 
         # Update billing count
@@ -513,7 +443,7 @@ async def delete_source(source_id: str, http_request: Request):
 
         asyncio.create_task(client.delete_graph_group(source_id, user_id))
 
-        return {"success": True, "message": "Source deleted successfully"}
+        return {"success": True, "message": "Document deleted successfully"}
 
 
 @router.post("/api/sources/{source_id}/sync")
@@ -531,68 +461,69 @@ async def sync_source_endpoint(source_id: str, background_tasks: BackgroundTasks
 async def create_url(request: UrlCreateRequest, http_request: Request):
     user_id = parse_user_id(http_request.headers.get("x-user-id"))
     async with get_session() as session:
-        from app.infra.db.postgres import Source
-        new_source = Source(
+        new_doc = Document(
             user_id=user_id,
-            type="url",
+            doc_type="url",
+            source="url",
             uri=request.url,
             name=request.title or request.url,
-            source_metadata={"description": request.description, "tags": request.tags},
+            document_metadata={"description": request.description, "tags": request.tags},
+            status="active",
         )
-        session.add(new_source)
+        session.add(new_doc)
         await session.commit()
-        await session.refresh(new_source)
-        return {"success": True, "id": str(new_source.id)}
+        await session.refresh(new_doc)
+        return {"success": True, "id": str(new_doc.id)}
 
 @router.get("/api/v1/external/urls")
 async def get_urls(http_request: Request):
     user_id = parse_user_id(http_request.headers.get("x-user-id"))
     async with get_session() as session:
         from sqlalchemy import select as sa_select
-        from app.infra.db.postgres import Source
-        result = await session.execute(sa_select(Source).where(Source.user_id == user_id, Source.type == "url"))
-        sources = result.scalars().all()
-        return {"data": [{"id": str(s.id), "url": s.uri, "title": s.name, "description": s.source_metadata.get("description", "") if s.source_metadata else "", "tags": s.source_metadata.get("tags", []) if s.source_metadata else [], "status": s.status, "created_at": s.created_at} for s in sources]}
+        result = await session.execute(sa_select(Document).where(Document.user_id == user_id, Document.source == "url"))
+        docs = result.scalars().all()
+        return {"data": [{"id": str(d.id), "url": d.uri, "title": d.name, "description": (d.document_metadata or {}).get("description", ""), "tags": (d.document_metadata or {}).get("tags", []), "status": d.status, "created_at": d.created_at} for d in docs]}
 
 @router.delete("/api/v1/external/urls/{url_id}")
 async def delete_url(url_id: str, http_request: Request):
     user_id = parse_user_id(http_request.headers.get("x-user-id"))
+    try:
+        url_uuid = uuid.UUID(url_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid URL ID format")
+
     async with get_session() as session:
         from sqlalchemy import select as sa_select
-        from app.infra.db.postgres import Source
-        result = await session.execute(sa_select(Source).where(Source.id == url_id, Source.user_id == user_id))
-        source = result.scalar_one_or_none()
-        if not source:
+        result = await session.execute(sa_select(Document).where(Document.id == url_uuid, Document.user_id == user_id))
+        doc = result.scalar_one_or_none()
+        if not doc:
             raise HTTPException(status_code=404, detail="URL not found")
-        await session.delete(source)
+        await session.delete(doc)
         await session.commit()
         return {"success": True}
 
 @router.put("/api/v1/external/urls/{url_id}")
 async def update_url(url_id: str, request: UrlUpdateRequest, http_request: Request):
     user_id = parse_user_id(http_request.headers.get("x-user-id"))
+    try:
+        url_uuid = uuid.UUID(url_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid URL ID format")
+
     async with get_session() as session:
         from sqlalchemy import select as sa_select
-        from app.infra.db.postgres import Source
-        
-        try:
-            import uuid
-            url_uuid = uuid.UUID(url_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid URL ID format")
-            
-        result = await session.execute(sa_select(Source).where(Source.id == url_uuid, Source.user_id == user_id))
-        source = result.scalar_one_or_none()
-        if not source:
+        result = await session.execute(sa_select(Document).where(Document.id == url_uuid, Document.user_id == user_id))
+        doc = result.scalar_one_or_none()
+        if not doc:
             raise HTTPException(status_code=404, detail="URL not found")
         if request.title is not None:
-            source.name = request.title
-        metadata = source.source_metadata or {}
+            doc.name = request.title
+        metadata = doc.document_metadata or {}
         if request.description is not None:
             metadata["description"] = request.description
         if request.tags is not None:
             metadata["tags"] = request.tags
-        source.source_metadata = metadata
+        doc.document_metadata = metadata
         await session.commit()
         return {"success": True}
 
@@ -750,30 +681,31 @@ async def sync_google_drive(request: GoogleDriveSyncRequest, background_tasks: B
     """Sync files from Google Drive."""
     try:
         async with get_session() as session:
-            source = Source(
+            doc = Document(
                 user_id=parse_user_id(None),
-                type="gdrive",
+                doc_type="gdrive",
+                source="gdrive",
                 name="Google Drive Sync",
                 uri="gdrive://sync",
-                source_metadata={
+                document_metadata={
                     "folder_id": request.folder_id,
                     "include_patterns": request.include_patterns,
                     "exclude_patterns": request.exclude_patterns,
                 },
             )
-            session.add(source)
+            session.add(doc)
             await session.commit()
-            await session.refresh(source)
+            await session.refresh(doc)
 
             background_tasks.add_task(
                 sync_gdrive_background,
-                str(source.id),
+                str(doc.id),
                 request.folder_id,
                 request.include_patterns,
                 request.exclude_patterns,
             )
 
-            return {"source_id": str(source.id), "message": "Google Drive sync started"}
+            return {"source_id": str(doc.id), "message": "Google Drive sync started"}
     except Exception as e:
         logger.error("Google Drive sync error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -804,30 +736,31 @@ async def sync_dropbox(request: DropboxSyncRequest, background_tasks: Background
     """Sync files from Dropbox."""
     try:
         async with get_session() as session:
-            source = Source(
+            doc = Document(
                 user_id=parse_user_id(None),
-                type="dropbox",
+                doc_type="dropbox",
+                source="dropbox",
                 name="Dropbox Sync",
                 uri="dropbox://sync",
-                source_metadata={
+                document_metadata={
                     "folder_path": request.folder_path,
                     "include_patterns": request.include_patterns,
                     "exclude_patterns": request.exclude_patterns,
                 },
             )
-            session.add(source)
+            session.add(doc)
             await session.commit()
-            await session.refresh(source)
+            await session.refresh(doc)
 
             background_tasks.add_task(
                 sync_dropbox_background,
-                str(source.id),
+                str(doc.id),
                 request.folder_path,
                 request.include_patterns,
                 request.exclude_patterns,
             )
 
-            return {"source_id": str(source.id), "message": "Dropbox sync started"}
+            return {"source_id": str(doc.id), "message": "Dropbox sync started"}
     except Exception as e:
         logger.error("Dropbox sync error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -854,14 +787,14 @@ async def get_oauth_token(
         from sqlalchemy import select
 
         async with get_session() as session:
-            query = select(Source).where(Source.id == uuid.UUID(source_id))
+            query = select(Document).where(Document.id == uuid.UUID(source_id))
             result = await session.execute(query)
-            source = result.scalar_one_or_none()
+            doc = result.scalar_one_or_none()
 
-            if not source:
-                raise HTTPException(status_code=404, detail="Source not found")
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document not found")
 
-            metadata = source.source_metadata or {}
+            metadata = doc.document_metadata or {}
             credentials = metadata.get("credentials", {})
 
             if not credentials or not credentials.get("access_token"):
@@ -987,74 +920,71 @@ async def route_single_file(file_path: str):
 
 @router.post("/api/v1/ingest")
 async def start_ingestion(request: IngestRequest, background_tasks: BackgroundTasks):
-    """Start ingesting a source."""
+    """Start ingesting a document source."""
     async with get_session() as session:
         from sqlalchemy import select
 
         job_manager = get_job_manager()
 
         try:
-            query = select(Source).where(Source.id == uuid.UUID(request.source_id))
-            result = await session.execute(query)
-            source = result.scalar_one_or_none()
-        except Exception:
-            raise HTTPException(status_code=404, detail="Source not found")
+            rid = uuid.UUID(request.source_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid source ID")
 
-        if not source:
-            raise HTTPException(status_code=404, detail="Source not found")
+        query = select(Document).where(Document.id == rid)
+        result = await session.execute(query)
+        doc = result.scalar_one_or_none()
+
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
 
         job = await job_manager.create_job(
             source_id=request.source_id,
-            source_type=SourceType(source.type),
+            source_type=SourceType(doc.source) if doc.source in [t.value for t in SourceType] else SourceType.UPLOAD,
             metadata={"force_reprocess": request.force_reprocess},
         )
 
-        background_tasks.add_task(process_source_background, job.id, request.source_id, source)
+        background_tasks.add_task(process_source_background, job.id, request.source_id, doc)
 
         return {"job_id": job.id, "status": job.status.value, "message": "Ingestion started"}
 
 
-async def process_source_background(job_id: str, source_id: str, source_obj):
-    """Background task to process a source."""
+async def process_source_background(job_id: str, source_id: str, doc_obj):
+    """Background task to process a document source."""
     job_manager = get_job_manager()
     try:
         await job_manager.update_job_status(job_id, JobStatus.PROCESSING)
 
-        # We fetch the source again since it's an async session and SQLAlchemy objects
-        # should not be passed across sessions
         async with get_session() as session:
             from sqlalchemy import select
             import uuid
 
-            query = select(Source).where(Source.id == uuid.UUID(source_id))
+            query = select(Document).where(Document.id == uuid.UUID(source_id))
             result = await session.execute(query)
-            source = result.scalar_one_or_none()
-            if not source:
+            doc = result.scalar_one_or_none()
+            if not doc:
                 logger.error(
-                    "Source not found in background task", job_id=job_id, source_id=source_id
+                    "Document not found in background task", job_id=job_id, source_id=source_id
                 )
                 await job_manager.update_job_status(job_id, JobStatus.FAILED)
                 return
 
-            source_type = source.type
-            uri = source.uri
-            metadata = source.source_metadata or {}
+            source_type = doc.source
+            uri = doc.uri
+            metadata = doc.document_metadata or {}
             credentials = metadata.get("credentials", {})
-            branch = metadata.get("branch") or "main"
-            access_token = credentials.get("access_token")
-            user_id = str(source.user_id)
+            user_id = str(doc.user_id)
 
         logger.info(
-            "Processing source", job_id=job_id, source_id=source_id, source_type=source_type
+            "Processing document", job_id=job_id, source_id=source_id, source_type=source_type
         )
 
-        if source_type in ["github", "gitlab", "bitbucket"]:
-            logger.error("Repository ingestion is not supported in doc-data-con", repo_id=source_id)
-            await job_manager.update_job_status(job_id, JobStatus.FAILED)
-            return
+        from app.services.documents.ingester import trigger_initial_sync
+        await trigger_initial_sync(source_id, source_type, metadata)
+        await job_manager.update_job_status(job_id, JobStatus.COMPLETED)
 
     except Exception as e:
-        logger.error("Failed to process source", job_id=job_id, error=str(e))
+        logger.error("Failed to process document", job_id=job_id, error=str(e))
         await job_manager.update_job_status(job_id, JobStatus.FAILED)
 
 
@@ -1124,15 +1054,15 @@ async def sync_gdrive_background(
         async with get_session() as session:
             from sqlalchemy import select
 
-            query = select(Source).where(Source.id == uuid.UUID(source_id))
+            query = select(Document).where(Document.id == uuid.UUID(source_id))
             result = await session.execute(query)
-            source = result.scalar_one_or_none()
+            doc = result.scalar_one_or_none()
 
-            if not source:
-                logger.error(f"Source not found: {source_id}")
+            if not doc:
+                logger.error(f"Document not found: {source_id}")
                 return
 
-            credentials = source.source_metadata.get("credentials", {})
+            credentials = (doc.document_metadata or {}).get("credentials", {})
 
         import typing
 
@@ -1176,15 +1106,15 @@ async def sync_dropbox_background(
         async with get_session() as session:
             from sqlalchemy import select
 
-            query = select(Source).where(Source.id == uuid.UUID(source_id))
+            query = select(Document).where(Document.id == uuid.UUID(source_id))
             result = await session.execute(query)
-            source = result.scalar_one_or_none()
+            doc = result.scalar_one_or_none()
 
-            if not source:
-                logger.error(f"Source not found: {source_id}")
+            if not doc:
+                logger.error(f"Document not found: {source_id}")
                 return
 
-            credentials = source.source_metadata.get("credentials", {})
+            credentials = (doc.document_metadata or {}).get("credentials", {})
 
         import typing
 

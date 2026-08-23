@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from app.config import get_settings
-from app.infra.db.postgres import get_session, Source
+from app.infra.db.postgres import get_session, Document
 from app.services.documents.processor import get_document_processor
 import uuid
 
@@ -20,19 +20,19 @@ async def _update_source_metadata_files(source_id: str, uploaded_files_info: lis
         return
     try:
         async with get_session() as session:
-            query = sa_select(Source).where(Source.id == uuid.UUID(source_id))
+            query = sa_select(Document).where(Document.id == uuid.UUID(source_id))
             result = await session.execute(query)
-            source_record = result.scalar_one_or_none()
-            if source_record:
-                new_metadata = dict(source_record.source_metadata or {})
+            doc_record = result.scalar_one_or_none()
+            if doc_record:
+                new_metadata = dict(doc_record.document_metadata or {})
                 new_metadata["files"] = uploaded_files_info
                 new_metadata["total_size_bytes"] = sum(f["size_bytes"] for f in uploaded_files_info)
-                source_record.source_metadata = new_metadata
-                flag_modified(source_record, "source_metadata")
+                doc_record.document_metadata = new_metadata
+                flag_modified(doc_record, "document_metadata")
                 await session.commit()
-                logger.info(f"Updated source {source_id} metadata with {len(uploaded_files_info)} files")
+                logger.info(f"Updated document {source_id} metadata with {len(uploaded_files_info)} files")
     except Exception as e:
-        logger.error(f"Failed to update source metadata for {source_id}", error=str(e))
+        logger.error(f"Failed to update document metadata for {source_id}", error=str(e))
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -58,23 +58,23 @@ async def trigger_initial_sync(source_id: str, source_type: str, source_metadata
         # DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
         logger.info("[SYNC] Downloads directory creation is disabled", path=str(DOWNLOADS_DIR))
 
-        # Fetch the complete source record from DB to get the reliable URI
+        # Fetch the complete document record from DB to get the reliable URI
         async with get_session() as session:
-            query = sa_select(Source).where(Source.id == uuid.UUID(source_id))
+            query = sa_select(Document).where(Document.id == uuid.UUID(source_id))
             result = await session.execute(query)
-            source = result.scalar_one_or_none()
+            doc = result.scalar_one_or_none()
 
-            if not source:
-                logger.error("[SYNC] Source not found in database", source_id=source_id)
+            if not doc:
+                logger.error("[SYNC] Document not found in database", source_id=source_id)
                 return
 
-            user_id = str(source.user_id) if source.user_id else "system"
+            user_id = str(doc.user_id) if doc.user_id else "system"
 
-            uri = source.uri
-            metadata = source.source_metadata or {}
+            uri = doc.uri
+            metadata = doc.document_metadata or {}
             credentials = metadata.get("credentials")
             logger.info(
-                "[SYNC] Source fetched from DB",
+                "[SYNC] Document fetched from DB",
                 source_id=source_id,
                 uri=uri,
                 has_credentials=bool(credentials),
@@ -89,7 +89,7 @@ async def trigger_initial_sync(source_id: str, source_type: str, source_metadata
         else:
             # Generic downloader for all other supported sources
             success = await sync_generic_source_local(
-                source_id, source.type, uri, credentials, metadata, user_id=user_id
+                source_id, doc.doc_type or source_type, uri, credentials, metadata, user_id=user_id
             )
 
         if not success:
@@ -295,11 +295,11 @@ async def sync_uploaded_files(source_id: str, uri: str, metadata: Dict[str, Any]
             user_id_str = user_id
             if user_id_str == "system":
                 async with get_session() as session:
-                    query = sa_select(Source).where(Source.id == uuid.UUID(source_id))
+                    query = sa_select(Document).where(Document.id == uuid.UUID(source_id))
                     result = await session.execute(query)
-                    source = result.scalar_one_or_none()
-                    if source and source.user_id:
-                        user_id_str = str(source.user_id)
+                    doc = result.scalar_one_or_none()
+                    if doc and doc.user_id:
+                        user_id_str = str(doc.user_id)
 
             import base64
             import asyncio
