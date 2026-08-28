@@ -1076,9 +1076,8 @@ async def sync_gdrive_background(
             ),
         )
 
-        # Direct publishing of file content to Kafka/unified-processor has been
-        # removed. Use the event-driven pipeline: create a Source and emit a
-        # lightweight sync request so unified-processor pulls content itself.
+        # Direct publishing of file content to unified-processor has been
+        # removed. Use HTTP client for synchronous processing instead.
         logger.warning(
             "Direct file publishing removed; triggering source sync instead", source_id=source_id
         )
@@ -1128,9 +1127,8 @@ async def sync_dropbox_background(
             ),
         )
 
-        # Direct publishing of file content to Kafka/unified-processor has been
-        # removed. Use the event-driven pipeline: create a Source and emit a
-        # lightweight sync request so unified-processor pulls content itself.
+        # Direct publishing of file content to unified-processor has been
+        # removed. Use HTTP client for synchronous processing instead.
         logger.warning(
             "Direct file publishing removed; triggering source sync instead", source_id=source_id
         )

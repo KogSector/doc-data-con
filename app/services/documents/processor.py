@@ -1,5 +1,5 @@
 """
-HTTP Document Processor - Replaces Kafka streaming
+HTTP Document Processor
 """
 
 import httpx

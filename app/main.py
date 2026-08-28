@@ -197,8 +197,8 @@ if __name__ == "__main__":
 
     settings = get_settings()
 
-    # Run only the HTTP server; gRPC server removed as data-connector communicates
-    # with unified-processor via Kafka only in production topology.
+    # Run only the HTTP server; gRPC and Kafka removed as data-connector communicates
+    # with unified-processor via HTTP only.
     config = uvicorn.Config(
         "app.main:app",
         host=settings.host,

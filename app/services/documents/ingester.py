@@ -271,7 +271,7 @@ async def sync_generic_source_local(
 
 
 async def sync_uploaded_files(source_id: str, uri: str, metadata: Dict[str, Any], user_id: str = "system") -> bool:
-    """Stream uploaded files from the local shared directory to Kafka."""
+    """Stream uploaded files from the local shared directory to doc-uni-proc via HTTP."""
     logger.info("Starting stream for uploaded files", source_id=source_id, uri=uri)
 
     try:

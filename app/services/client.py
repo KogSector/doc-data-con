@@ -1,7 +1,7 @@
 """
 Data Connector Service - Downstream Service Client
-Handles communication with unified-processor via Kafka events.
-Uses gRPC for internal service-to-service communication (auth, health checks).
+Handles communication with unified-processor via HTTP.
+Uses HTTP for internal service-to-service communication (auth, health checks).
 """
 
 import structlog
@@ -26,7 +26,7 @@ logger = structlog.get_logger()
 
 
 class ServiceClient:
-    """Client for communicating with downstream processing services via Kafka events."""
+    """Client for communicating with downstream processing services via HTTP."""
 
     def __init__(self):
         self.settings = get_settings()
@@ -39,7 +39,7 @@ class ServiceClient:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """
-        Trigger source sync via Kafka event (Decoupled).
+        Trigger source sync via HTTP (Synchronous).
 
         Args:
             source_id: ID of the source being processed
@@ -72,7 +72,7 @@ class ServiceClient:
                 return
 
             logger.warning(
-                "Source sync requests via Kafka are deprecated. Ignoring non-URL sync request.",
+                "Source sync requests for non-URL sources are not supported via HTTP. Ignoring sync request.",
                 source_id=source_id,
                 source_type=source_type,
             )
@@ -130,13 +130,11 @@ class ServiceClient:
         """
         Forward data to unified-processor via internal HTTP POST.
 
-        This is used for CRM/GRC sync flows where the data-connector fetches
-        records from third-party APIs and sends the structured payload to
+        This is used for document processing flows where the data-connector fetches
+        document content and sends the structured payload to
         unified-processor for chunking and embedding.
 
-        Unlike the deprecated ``send_to_unified_processor`` (which embedded file
-        content in Kafka messages), this is a targeted control-plane call for
-        already-structured application data.
+        This is a targeted control-plane call for already-structured application data.
 
         Args:
             endpoint: Relative endpoint path, e.g. "/api/v1/crms/process"

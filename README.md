@@ -9,8 +9,8 @@ The Data Connector service is the entry point for all data sources in the ConFus
 
 - **Source Management**: Connect to Git repositories, document storage, APIs
 - **File Type Detection**: Analyze files to determine if they're code or documents
-- **Intelligent Routing**: Route files to appropriate processors via Kafka
-- **Event Production**: Publish file ingestion events to Confluent Cloud
+- **Intelligent Routing**: Route files to appropriate processors via HTTP
+- **Document Processing**: Send documents to unified-processor for chunking and embedding
 - **Webhook Handling**: Receive triggers from external systems
 
 ## Architecture
@@ -19,13 +19,13 @@ The Data Connector service is the entry point for all data sources in the ConFus
 ┌─────────────────────────────────────────────────────────────┐
 │                    Data Connector (:8080)                    │
 ├─────────────────────────────────────────────────────────────┤
-│  Source Management  │  File Classification  │  Events       │
+│  Source Management  │  File Classification  │  HTTP Client   │
 └─────────────────────┴──────────────────────┴───────────────┘
                               │
                               ▼
                     ┌─────────────────┐
-                    │  Confluent Cloud │
-                    │     Kafka        │
+                    │  Unified        │
+                    │  Processor     │
                     └─────────────────┘
 ```
 
@@ -47,45 +47,37 @@ The Data Connector service is the entry point for all data sources in the ConFus
 - **Documents**: PDF, Word, Markdown, Text
 - **Configuration**: YAML, JSON, TOML
 
-## Event Flow
+## Processing Flow
 
-### File Ingestion
+### Document Ingestion
 ```
-Repository Sync → File Discovery → Classification → Event Production
+Document Upload → File Discovery → Classification → HTTP Processing
 ```
 
-### Events Produced
+### Processing Steps
 ```
-code.ingested      # For code files
-docs.ingested      # For document files
-source.sync.completed
-source.sync.failed
+1. Document Upload
+2. File Classification
+3. HTTP POST to unified-processor
+4. Chunking and Embedding
 ```
 
 ## Configuration
 
 ### Environment Variables
 ```bash
-# Unified Processor (via Kafka)
-# Data-Connector publishes ingestion events to Kafka; Unified-Processor consumes them.
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-KAFKA_DLQ_TOPIC=confuse-dlq
-
-# Confluent Cloud (optional)
-CONFLUENT_BOOTSTRAP_SERVERS=pkc-7prvp.centralindia.azure.confluent.cloud:9092
-CONFLUENT_API_KEY=your_api_key
-CONFLUENT_API_SECRET=your_api_secret
+# Unified Processor (via HTTP)
+DOC_UNI_PROC_URL=http://localhost:8090
+DOC_UNI_PROC_TIMEOUT_SECS=180
 
 # Service
 PORT=8080
 ENVIRONMENT=development
 ```
 
-### Kafka Integration
+### HTTP Integration
 
-This service publishes ingestion events to Kafka which the Unified Processor consumes. Use the
-`KAFKA_BOOTSTRAP_SERVERS` env var to point to your Kafka cluster. For production, set `KAFKA_DLQ_TOPIC`
-to capture messages that exhaust retries.
+This service sends document content to unified-processor via HTTP POST for chunking and embedding.
 
 ## Development
 
@@ -98,25 +90,21 @@ The service requires Python 3.8+ with the following key dependencies:
 - Uvicorn: ASGI server
 - Pydantic (≥2.5.0): Data validation
 
-**gRPC Communication (v1.60.0+):**
-- grpcio: Core gRPC runtime
-- grpcio-tools: Protocol buffer compiler
-- grpcio-status: Rich error status codes
-- grpcio-reflection: Service reflection support
+**HTTP Communication:**
+- httpx: Async HTTP client
+- Requests: HTTP library
 
 **Other:**
-- httpx: Async HTTP client
-- GitPython: Git repository operations
 - aiofiles: Async file I/O
 
-### How to run the microservicening Locally
+### How to run the microservice Locally
 ```bash
 # Install dependencies
 pip install -e .
 
 # Set environment
 export ENVIRONMENT=development
-export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+export DOC_UNI_PROC_URL=http://localhost:8090
 
 # Run service
 python -m app.main
@@ -126,9 +114,6 @@ python -m app.main
 ```bash
 # Run tests
 pytest tests/
-
-# Test Kafka connectivity
-python -m app.kafka.test_connection
 ```
 
 ## Deployment

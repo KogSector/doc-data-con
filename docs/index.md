@@ -107,10 +107,6 @@ POST /webhooks/gitlab
 POST /webhooks/generic
 ```
 
-### gRPC removed
-
-Data-connector no longer exposes or depends on gRPC. All hot-path forwarding to the `unified-processor` is done via Kafka events. The repository's gRPC stubs and server components have been removed; developers should use the Kafka-based APIs and the `KAFKA_*` environment variables described above.
-
 ## Ingestion Pipeline
 
 ### Ingestion Flow
