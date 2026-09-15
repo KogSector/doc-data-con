@@ -12,9 +12,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# Load environment variables from .env.map (non-sensitive), .env.secret (sensitive), and .env.local
-load_dotenv(".env.map")
-load_dotenv(".env.secret", override=True)
+# Load environment variables from .map.env (non-sensitive), .secret.env (sensitive), and .env.local
+load_dotenv(".map.env")
+load_dotenv(".secret.env", override=True)
 load_dotenv(".env.local", override=True)
 
 from app.config import get_settings

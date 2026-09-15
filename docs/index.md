@@ -22,8 +22,8 @@ source .venv/bin/activate  # Linux/Mac
 pip install -e .
 
 # Configure environment
-cp .env.map.example .env.map
-cp .env.secret.example .env.secret
+cp .map.env.example .map.env
+cp .secret.env.example .secret.env
 
 # Generate gRPC stubs
 ./proto/generate_stubs.sh  # Linux/Mac
@@ -503,7 +503,7 @@ service DataConnector {
 
 ### Required Environment Variables
 
-#### `.env.map` (Non-sensitive)
+#### `.map.env` (Non-sensitive)
 ```bash
 # Service Configuration
 PORT=3030
@@ -536,7 +536,7 @@ GITHUB_REDIRECT_URI=http://localhost:3030/auth/github/callback
 CORS_ORIGINS=http://localhost:3000,https://confuse.platform.example.com
 ```
 
-#### `.env.secret` (Sensitive)
+#### `.secret.env` (Sensitive)
 ```bash
 # Database
 POSTGRES_CONNECTION_STRING=postgresql://...

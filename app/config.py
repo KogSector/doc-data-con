@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     falkordb_password: str | None = Field(default="graph4confuse", alias="FALKORDB_PASSWORD")
 
     class Config:
-        env_file = [".env.map", ".env.secret", ".env.local"]
+        env_file = [".map.env", ".secret.env", ".env.local"]
         extra = "ignore"
 
 
