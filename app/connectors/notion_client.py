@@ -7,7 +7,7 @@ import structlog
 import uuid
 from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
 from app.config import Settings
@@ -359,21 +359,61 @@ class NotionConnector(BaseConnector):
         # Fallback
         return "Untitled"
 
+    @staticmethod
+    def _looks_like_notion_id(value: str) -> bool:
+        """True when the value is a bare Notion ID (32 hex chars, dashes optional)."""
+        cleaned = (value or "").replace("-", "").strip()
+        return len(cleaned) == 32 and all(c in "0123456789abcdefABCDEF" for c in cleaned)
+
     async def fetch_source(self, **kwargs) -> tuple[list[dict], int]:
         """Fetch all pages from Notion for initial ingestion."""
         uri = kwargs.get("uri")
         credentials = kwargs.get("credentials", {})
         include_patterns = kwargs.get("include_patterns", ["**/*"])
         exclude_patterns = kwargs.get("exclude_patterns", [])
+        source_metadata = kwargs.get("source_metadata", {}) or {}
+
+        # Explicit item selection (e.g. per-page sources created by the file browser)
+        item_ids = (
+            kwargs.get("item_ids")
+            or source_metadata.get("item_ids")
+            or source_metadata.get("metadata", {}).get("item_ids")
+            or []
+        )
 
         if credentials and credentials.get("access_token"):
             self._client = NotionClient(auth=credentials["access_token"])
 
-        logger.info("Starting Notion fetch_source", uri=uri)
+        logger.info("Starting Notion fetch_source", uri=uri, selected_items=len(item_ids))
 
-        # 1. List all pages
+        # 1. Resolve the pages to fetch
         try:
-            pages = await self.list_pages(database_id=uri)
+            if item_ids:
+                # Item-based sync: each selected item is either a page or a database
+                pages = []
+                for item_id in item_ids:
+                    item_id = str(item_id)
+                    try:
+                        page = self._client.pages.retrieve(page_id=item_id)
+                        pages.append({"id": page["id"], "title": self._get_title(page)})
+                        continue
+                    except Exception:
+                        pass  # not a page; try a database below
+                    try:
+                        rows = self._client.databases.query(database_id=item_id).get("results", [])
+                        for row in rows:
+                            pages.append({"id": row["id"], "title": self._get_title(row)})
+                    except Exception as e:
+                        logger.warning(
+                            "Skipping Notion item that is neither page nor database",
+                            item_id=item_id,
+                            error=str(e),
+                        )
+            else:
+                # Only treat the URI as a database id when it looks like one; sources
+                # created from the file browser use opaque URIs like 'oauth://notion/<id>'.
+                database_id = uri if uri and self._looks_like_notion_id(uri) else None
+                pages = await self.list_pages(database_id=database_id)
         except Exception as e:
             logger.error("Failed to list pages in Notion fetch_source", error=str(e))
             raise
@@ -450,28 +490,104 @@ class ConnectNotionRequest(BaseModel):
 
 @notion_router.get("/pages")
 async def list_pages(request: Request):
-    """List available Notion pages."""
-    logger.info("Listing Notion pages")
-    return {"success": True, "pages": []}
+    """List available Notion pages and databases for the authenticated user."""
+    user_id = request.headers.get("x-user-id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="x-user-id header required")
+
+    logger.info("Listing Notion pages", user_id=user_id)
+    from app.config import get_settings
+    from app.services.client import ServiceClient
+
+    try:
+        tokens = await ServiceClient().get_auth_token(user_id, "notion")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to retrieve Notion token", error=str(e))
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
+
+    if not tokens or not tokens.get("access_token"):
+        raise HTTPException(
+            status_code=401, detail="No active Notion connection found. Please connect your workspace."
+        )
+
+    connector = NotionConnector(get_settings())
+    connector.set_credentials(tokens["access_token"], tokens.get("refresh_token"))
+
+    try:
+        databases = await connector.list_databases()
+        pages = await connector.list_pages()
+    except Exception as e:
+        logger.error("Failed to list Notion content", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Failed to fetch pages from Notion: {str(e)}")
+
+    return {
+        "success": True,
+        "databases": [{"id": d["id"], "title": d["title"]} for d in databases],
+        "pages": [{"id": p["id"], "title": p["title"]} for p in pages],
+    }
 
 
 @notion_router.post("")
 async def connect_workspace(payload: ConnectNotionRequest, request: Request):
-    """Connect a Notion workspace."""
-    logger.info("Connecting Notion workspace", workspace_name=payload.workspace_name)
-    workspace_id = str(uuid.uuid4())
+    """Validate a Notion access token and identify the bot/workspace it belongs to."""
+    logger.info("Validating Notion workspace token", workspace_name=payload.workspace_name)
+    from app.config import get_settings
+
+    connector = NotionConnector(get_settings())
+    connector.set_credentials(payload.access_token, None)
+
+    try:
+        me = connector._client.users.me()
+    except Exception as e:
+        logger.error("Notion token validation failed", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Invalid Notion access token: {str(e)}")
+
     return {
         "success": True,
-        "workspace_id": workspace_id,
-        "message": "Notion workspace connected successfully",
+        "workspace_id": payload.workspace_name,
+        "workspace_name": payload.workspace_name,
+        "bot_name": me.get("name") or payload.workspace_name,
+        "message": (
+            "Notion access token validated. Save it through the OAuth connection flow "
+            "or include it as 'credentials' when creating a source."
+        ),
     }
 
 
 @notion_router.post("/{workspace_id}/sync")
-async def sync_workspace(workspace_id: str, request: Request):
-    """Sync Notion pages."""
-    logger.info("Syncing Notion workspace", workspace_id=workspace_id)
-    return {"success": True, "message": "Notion sync triggered"}
+async def sync_workspace(workspace_id: str, request: Request, background_tasks: BackgroundTasks):
+    """Trigger a sync of the user's connected Notion sources."""
+    user_id = request.headers.get("x-user-id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="x-user-id header required")
+
+    logger.info("Syncing Notion workspace", workspace_id=workspace_id, user_id=user_id)
+    from sqlalchemy import select as sa_select
+
+    from app.infra.db.postgres import Document, get_session
+    from app.services.documents.ingester import trigger_initial_sync
+    from app.utils.user import parse_user_id
+
+    async with get_session() as session:
+        result = await session.execute(
+            sa_select(Document).where(
+                Document.user_id == parse_user_id(user_id),
+                Document.source == "notion",
+            )
+        )
+        docs = result.scalars().all()
+
+    for doc in docs:
+        metadata = dict(doc.document_metadata or {})
+        background_tasks.add_task(trigger_initial_sync, str(doc.id), "notion", metadata)
+
+    return {
+        "success": True,
+        "message": f"Notion sync triggered for {len(docs)} source(s)",
+        "sources_synced": len(docs),
+    }
 
 
 # Create a separate router for the callback to bypass /api/v1/notion prefix

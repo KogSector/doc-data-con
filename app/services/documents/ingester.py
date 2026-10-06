@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 from app.config import get_settings
 from app.infra.db.postgres import get_session, Document
+from app.models import normalize_source_type
 from app.services.documents.processor import get_document_processor
 import uuid
 
@@ -81,15 +82,19 @@ async def trigger_initial_sync(source_id: str, source_type: str, source_metadata
             )
 
         success = False
-        if source_type in ["google-drive", "google_drive", "google"]:
-            success = await sync_google_drive_local(source_id, credentials, metadata, user_id=user_id)
-        elif source_type == "upload":
-            success = await sync_uploaded_files(source_id, uri, metadata, user_id=user_id)
+        normalized_type = normalize_source_type(source_type)
+        item_ids = metadata.get("item_ids") or (metadata.get("metadata") or {}).get("item_ids") or []
 
+        if normalized_type == "upload":
+            success = await sync_uploaded_files(source_id, uri, metadata, user_id=user_id)
+        elif normalized_type == "gdrive" and not item_ids:
+            # Folder-based Google Drive sync lists the folder tree itself
+            success = await sync_google_drive_local(source_id, credentials, metadata, user_id=user_id)
         else:
-            # Generic downloader for all other supported sources
+            # Item-based selections (item_ids) and all other providers route through the
+            # generic connector dispatch keyed by the normalized source type.
             success = await sync_generic_source_local(
-                source_id, doc.doc_type or source_type, uri, credentials, metadata, user_id=user_id
+                source_id, normalized_type or source_type, uri, credentials, metadata, user_id=user_id
             )
 
         if not success:
@@ -193,6 +198,7 @@ async def sync_generic_source_local(
         connector = None
 
         # Only loading specific connectors based on the type
+        provider = normalize_source_type(provider)
         if provider == "onedrive":
             from app.connectors.onedrive_client import OneDriveConnector
 
@@ -205,6 +211,11 @@ async def sync_generic_source_local(
             from app.connectors.notion_client import NotionConnector
 
             connector = NotionConnector(settings)
+        elif provider in ("gdrive", "google", "google_drive"):
+            # Item-based Google Drive selections reach the generic dispatcher
+            from app.connectors.gdrive_client import GoogleDriveConnector
+
+            connector = GoogleDriveConnector(settings)
         # Add additional connector mappings as supported
 
         if not connector:

@@ -34,6 +34,26 @@ class SourceType(str, Enum):
     NOSQL_DATABASE = "nosql_database"
 
 
+# Provider aliases used by frontend/clients that map onto canonical SourceType values
+SOURCE_TYPE_ALIASES: dict[str, str] = {
+    "google_drive": SourceType.GDRIVE.value,
+    "google-drive": SourceType.GDRIVE.value,
+    "google drive": SourceType.GDRIVE.value,
+    "googledrive": SourceType.GDRIVE.value,
+    "google": SourceType.GDRIVE.value,
+    "notion_db": SourceType.NOTION.value,
+    "notion-db": SourceType.NOTION.value,
+}
+
+
+def normalize_source_type(value: Any) -> str:
+    """Normalize provider/source-type aliases (e.g. 'google_drive') to canonical SourceType values ('gdrive')."""
+    if isinstance(value, SourceType):
+        return value.value
+    key = str(value or "").strip().lower()
+    return SOURCE_TYPE_ALIASES.get(key, key)
+
+
 class FileType(str, Enum):
     """File type categories for routing."""
 

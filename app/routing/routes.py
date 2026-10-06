@@ -9,7 +9,7 @@ from typing import Any, List, Optional
 import structlog
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Header, Query
 from app.utils.user import parse_user_id
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.exc import IntegrityError
 from app.config import get_settings
 
@@ -20,6 +20,7 @@ from app.models import (
     SourceType,
     JobStatus,
     IngestRequest,
+    normalize_source_type,
 )
 from app.infra.db.postgres import get_session, Document
 from app.router import get_router
@@ -58,6 +59,12 @@ class SourceCreateRequest(BaseModel):
     include_patterns: list[str] = ["**/*"]
     exclude_patterns: list[str] = []
     metadata: dict[str, Any] = {}
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _normalize_type_alias(cls, v: Any) -> Any:
+        """Accept provider aliases such as 'google_drive' and map them to canonical SourceType values."""
+        return normalize_source_type(v)
 
     def validate(self) -> None:
         """Validate the request data."""
@@ -534,6 +541,9 @@ async def browse_provider_files(provider: str, http_request: Request, path: Opti
     if not user_id:
         raise HTTPException(status_code=401, detail="User authentication required")
 
+    # Accept provider aliases such as 'google_drive' and map them to canonical names
+    provider = normalize_source_type(provider)
+
     client = get_service_client()
     try:
         provider_name = provider
@@ -643,6 +653,55 @@ async def browse_provider_files(provider: str, http_request: Request, path: Opti
                 )
             return {"success": True, "data": mapped, "path": path}
 
+        elif provider == "notion":
+            from app.connectors.notion_client import NotionConnector
+
+            connector = NotionConnector(settings)
+            connector.set_credentials(tokens["access_token"], tokens.get("refresh_token"))
+
+            mapped = []
+            if path:
+                # Inside a Notion database: list its pages as selectable items
+                for p in await connector.list_pages(database_id=path):
+                    mapped.append(
+                        {
+                            "id": p["id"],
+                            "name": p["title"] or "Untitled",
+                            "path": "",
+                            "type": "file",
+                            "size": None,
+                            "mime_type": "notion/page",
+                            "last_modified": p.get("updated_at"),
+                        }
+                    )
+            else:
+                # Root: shared databases (containers) + top-level pages
+                for db in await connector.list_databases():
+                    mapped.append(
+                        {
+                            "id": db["id"],
+                            "name": db["title"] or "Untitled database",
+                            "path": "",
+                            "type": "folder",
+                            "size": None,
+                            "mime_type": "notion/database",
+                            "last_modified": db.get("updated_at"),
+                        }
+                    )
+                for p in await connector.list_pages():
+                    mapped.append(
+                        {
+                            "id": p["id"],
+                            "name": p["title"] or "Untitled",
+                            "path": "",
+                            "type": "file",
+                            "size": None,
+                            "mime_type": "notion/page",
+                            "last_modified": p.get("updated_at"),
+                        }
+                    )
+            return {"success": True, "data": mapped, "path": path}
+
         else:
             raise HTTPException(
                 status_code=400, detail=f"Provider {provider} not supported for browsing yet"
@@ -660,9 +719,9 @@ async def browse_provider_files(provider: str, http_request: Request, path: Opti
 async def google_drive_callback(request: GoogleDriveCallbackRequest):
     """Handle OAuth callback from Google Drive."""
     try:
-        from app.connectors.gdrive_client import GDriveConnector
+        from app.connectors.gdrive_client import GoogleDriveConnector
 
-        connector = GDriveConnector(settings)
+        connector = GoogleDriveConnector(settings)
         token_data = await connector.exchange_code_for_token(request.code)
         return {
             "success": True,
@@ -1047,9 +1106,7 @@ async def sync_gdrive_background(
 ):
     """Background task to sync Google Drive files."""
     try:
-        from app.connectors.gdrive_client import GDriveConnector
-
-        connector = GDriveConnector(settings)
+        from app.services.documents.ingester import sync_google_drive_local
 
         async with get_session() as session:
             from sqlalchemy import select
@@ -1063,29 +1120,14 @@ async def sync_gdrive_background(
                 return
 
             credentials = (doc.document_metadata or {}).get("credentials", {})
+            metadata = dict(doc.document_metadata or {})
+            metadata["folder_id"] = folder_id
+            metadata["include_patterns"] = include_patterns
+            metadata["exclude_patterns"] = exclude_patterns
+            user_id = str(doc.user_id) if doc.user_id else "system"
 
-        import typing
-
-        files = typing.cast(
-            list,
-            await connector.fetch_files(
-                credentials=credentials,
-                folder_id=folder_id,
-                include_patterns=include_patterns,
-                exclude_patterns=exclude_patterns,
-            ),
-        )
-
-        # Direct publishing of file content to unified-processor has been
-        # removed. Use HTTP client for synchronous processing instead.
-        logger.warning(
-            "Direct file publishing removed; triggering source sync instead", source_id=source_id
-        )
-        service_client = ServiceClient()
-        await service_client.trigger_source_sync(
-            source_id=source_id, source_type="google_drive", source_url=source_id, metadata={}
-        )
-        logger.info(f"Google Drive sync requested via event-driven pipeline for source {source_id}")
+        await sync_google_drive_local(source_id, credentials, metadata, user_id=user_id)
+        logger.info(f"Google Drive sync completed for source {source_id}")
     except Exception as e:
         logger.error(f"Google Drive sync failed: {str(e)}")
 
