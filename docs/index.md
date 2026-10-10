@@ -34,7 +34,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 3030
 ```
 
 The service starts at:
-- **HTTP**: `http://localhost:3030`
+- **HTTP**: `http://localhost:8081`
 - **gRPC**: `localhost:50052`
 
 ## API Endpoints
@@ -231,7 +231,7 @@ class ConnectorError(Exception):
 | Document | Description |
 |----------|-------------|
 | [Architecture](architecture.md) | Service design and data flow |
-| [Configuration](configuration.md) | Environment variables |
+| [README](README.md) | Environment variables & configuration |
 | [Source Connectors](connectors.md) | Data source integrations |
 
 ## How It Fits in ConFuse
@@ -248,7 +248,7 @@ graph TD
     end
     
     %% Data Connector Layer
-    DC[Data-Connector<br/>Port: 3030<br/>gRPC: 50052]
+    DC[Data-Connector<br/>Port: 8081<br/>gRPC: 50052]
     
     %% Processing Layer
     UP[Unified-Processor<br/>Port: 8090<br/>gRPC: 50053]
@@ -528,9 +528,9 @@ FEATURE_TOGGLE_SERVICE_URL=http://feature-toggle:3099
 # DOWNLOADS_BASE_PATH=/shared/downloads
 
 # OAuth Callback URLs
-GOOGLE_REDIRECT_URI=http://localhost:3030/auth/google/callback
-MICROSOFT_REDIRECT_URI=http://localhost:3030/auth/microsoft/callback
-GITHUB_REDIRECT_URI=http://localhost:3030/auth/github/callback
+GOOGLE_REDIRECT_URI=http://localhost:8081/auth/google/callback
+MICROSOFT_REDIRECT_URI=http://localhost:8081/auth/microsoft/callback
+GITHUB_REDIRECT_URI=http://localhost:8081/auth/github/callback
 
 # CORS Configuration
 CORS_ORIGINS=http://localhost:3000,https://confuse.platform.example.com

@@ -51,6 +51,5 @@ dev = [
 line-length = 100
 target-version = "py312"
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
+# Tests live in ../ConFuse-test-module (Python-only, central test module).
+# This service intentionally contains no tests.
